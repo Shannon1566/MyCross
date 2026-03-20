@@ -78,7 +78,6 @@
     <div class="status">
       <div class="left"><span class="dot" id="dot"></span><span id="st">状态: 已停止</span></div>
       <div class="actions">
-        <button class="btn" id="applyBtn">应用参数</button>
         <button class="pri" id="toggleBtn">启动准星</button>
       </div>
     </div>
@@ -103,6 +102,8 @@
     function normName(n){n=(n||"").trim();if(!n)return"";return /\.ini$/i.test(n)?n:`${n}.ini`;}
 
     let dirty = false;
+    let autoApplyTimer = null;
+    let inAutoApply = false;
 
     function render(s, forceFill=false){
       const sel=$("profileSelect");
@@ -121,9 +122,26 @@
 
     async function refresh(){try{render(await state(), false)}catch(e){alert(`刷新失败: ${e.message}`)}}
 
-    keys.forEach(k=>$(k).addEventListener('input',()=>{dirty=true;paintSwatch();}));
+    async function autoApplyNow(){
+      if (inAutoApply) return;
+      inAutoApply = true;
+      try {
+        const s = await post('/api/apply', formData());
+        dirty = false;
+        render(s, false);
+      } catch (e) {
+        alert(`自动应用失败: ${e.message}`);
+      } finally {
+        inAutoApply = false;
+      }
+    }
 
-    $("applyBtn").onclick=async()=>{try{const s=await post('/api/apply',formData());dirty=false;render(s,true)}catch(e){alert(`应用失败: ${e.message}`)}};
+    function scheduleAutoApply(){
+      if (autoApplyTimer) clearTimeout(autoApplyTimer);
+      autoApplyTimer = setTimeout(autoApplyNow, 220);
+    }
+
+    keys.forEach(k=>$(k).addEventListener('input',()=>{dirty=true;paintSwatch();scheduleAutoApply();}));
     $("toggleBtn").onclick=async()=>{try{const s=await state();render(await post('/api/toggle',{running:s.running?0:1}),false)}catch(e){alert(`切换失败: ${e.message}`)}};
     $("loadBtn").onclick=async()=>{const n=$("profileSelect").value;if(!n)return;try{const s=await post('/api/profile/load',{name:n});dirty=false;render(s,true)}catch(e){alert(`加载失败: ${e.message}`)}};
     $("saveBtn").onclick=async()=>{try{const s=await post('/api/profile/save',{...formData(),name:$("profileName").value.trim()});dirty=false;render(s,true)}catch(e){alert(`保存失败: ${e.message}`)}};
