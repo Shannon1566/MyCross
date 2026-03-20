@@ -5,6 +5,7 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <cwctype>
 
 namespace {
 constexpr wchar_t kMainWindowClass[] = L"MyCrossMainWindow";
@@ -31,6 +32,8 @@ constexpr int IDC_BUTTON_SAVE = 1004;
 constexpr int IDC_BUTTON_TOGGLE = 1005;
 constexpr int IDC_COLOR_SWATCH = 1006;
 constexpr int IDC_STATUS_LABEL = 1007;
+constexpr int IDC_EDIT_PROFILE_NAME = 1008;
+constexpr int IDC_BUTTON_RENAME = 1009;
 
 constexpr int IDC_EDIT_X = 1101;
 constexpr int IDC_EDIT_Y = 1102;
@@ -60,8 +63,10 @@ HWND g_toggleButton = nullptr;
 HWND g_buttonRefresh = nullptr;
 HWND g_buttonNew = nullptr;
 HWND g_buttonSave = nullptr;
+HWND g_buttonRename = nullptr;
 HWND g_statusLabel = nullptr;
 HWND g_colorSwatch = nullptr;
+HWND g_editProfileName = nullptr;
 HWND g_editX = nullptr;
 HWND g_editY = nullptr;
 HWND g_editWindowSize = nullptr;
@@ -122,6 +127,61 @@ std::wstring GetExeDir()
 std::wstring BuildProfilePath(const std::wstring& profileName)
 {
     return g_configDir + L"\\" + profileName;
+}
+
+std::wstring Trim(const std::wstring& text)
+{
+    size_t left = 0;
+    while (left < text.size() && iswspace(text[left])) {
+        ++left;
+    }
+
+    size_t right = text.size();
+    while (right > left && iswspace(text[right - 1])) {
+        --right;
+    }
+
+    return text.substr(left, right - left);
+}
+
+std::wstring NormalizeProfileName(std::wstring name)
+{
+    name = Trim(name);
+    for (auto& ch : name) {
+        if (ch == L'\\' || ch == L'/' || ch == L':' || ch == L'*' || ch == L'?' ||
+            ch == L'\"' || ch == L'<' || ch == L'>' || ch == L'|') {
+            ch = L'_';
+        }
+    }
+
+    if (name.empty()) {
+        return L"";
+    }
+
+    const std::wstring suffix = L".ini";
+    if (name.size() < suffix.size() || _wcsicmp(name.c_str() + (name.size() - suffix.size()), suffix.c_str()) != 0) {
+        name += suffix;
+    }
+
+    return name;
+}
+
+void SetProfileNameInput(const std::wstring& profileName)
+{
+    if (g_editProfileName != nullptr) {
+        SetWindowTextW(g_editProfileName, profileName.c_str());
+    }
+}
+
+std::wstring GetProfileNameInput()
+{
+    if (g_editProfileName == nullptr) {
+        return L"";
+    }
+
+    wchar_t text[260] = {};
+    GetWindowTextW(g_editProfileName, text, 260);
+    return NormalizeProfileName(text);
 }
 
 void CreateUiFonts()
@@ -494,6 +554,7 @@ void LoadSelectedProfileToUi()
     const std::wstring profilePath = BuildProfilePath(profileName);
     g_currentConfig = LoadConfigFromFile(profilePath);
     g_activeProfileName = profileName;
+    SetProfileNameInput(profileName);
     FillUiFromConfig(g_currentConfig);
     ApplyConfigToOverlayIfRunning();
 }
@@ -536,19 +597,28 @@ void EnsureConfigFolderAndDefaultProfile()
 
 void SaveCurrentProfile()
 {
-    if (g_activeProfileName.empty()) {
-        MessageBoxW(g_mainWindow, L"请先选择一个配置文件。", L"MyCross", MB_OK | MB_ICONWARNING);
+    std::wstring targetName = g_activeProfileName;
+    const std::wstring inputName = GetProfileNameInput();
+
+    if (!inputName.empty()) {
+        targetName = inputName;
+    }
+
+    if (targetName.empty()) {
+        MessageBoxW(g_mainWindow, L"请输入配置名或先选择一个配置文件。", L"MyCross", MB_OK | MB_ICONWARNING);
         return;
     }
 
     g_currentConfig = ReadConfigFromUi();
-    const std::wstring path = BuildProfilePath(g_activeProfileName);
+    const std::wstring path = BuildProfilePath(targetName);
 
     if (!SaveConfigToFile(path, g_currentConfig)) {
         MessageBoxW(g_mainWindow, L"保存配置失败。", L"MyCross", MB_OK | MB_ICONERROR);
         return;
     }
 
+    g_activeProfileName = targetName;
+    RefreshProfileList(g_activeProfileName);
     ApplyConfigToOverlayIfRunning();
     MessageBoxW(g_mainWindow, L"配置已保存。", L"MyCross", MB_OK | MB_ICONINFORMATION);
 }
@@ -557,8 +627,22 @@ void CreateNewProfileFromCurrent()
 {
     g_currentConfig = ReadConfigFromUi();
 
-    const std::wstring profileName = GenerateNextProfileName();
+    std::wstring profileName = GetProfileNameInput();
+    if (profileName.empty()) {
+        profileName = GenerateNextProfileName();
+    }
     const std::wstring profilePath = BuildProfilePath(profileName);
+
+    if (GetFileAttributesW(profilePath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        const int answer = MessageBoxW(
+            g_mainWindow,
+            L"同名配置已存在，是否覆盖？",
+            L"MyCross",
+            MB_YESNO | MB_ICONQUESTION);
+        if (answer != IDYES) {
+            return;
+        }
+    }
 
     if (!SaveConfigToFile(profilePath, g_currentConfig)) {
         MessageBoxW(g_mainWindow, L"新建配置失败。", L"MyCross", MB_OK | MB_ICONERROR);
@@ -568,6 +652,42 @@ void CreateNewProfileFromCurrent()
     g_activeProfileName = profileName;
     RefreshProfileList(profileName);
     MessageBoxW(g_mainWindow, L"已基于当前参数创建新配置。", L"MyCross", MB_OK | MB_ICONINFORMATION);
+}
+
+void RenameCurrentProfile()
+{
+    if (g_activeProfileName.empty()) {
+        MessageBoxW(g_mainWindow, L"请先选择一个配置文件。", L"MyCross", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    const std::wstring newName = GetProfileNameInput();
+    if (newName.empty()) {
+        MessageBoxW(g_mainWindow, L"请输入新的配置名。", L"MyCross", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    if (_wcsicmp(newName.c_str(), g_activeProfileName.c_str()) == 0) {
+        MessageBoxW(g_mainWindow, L"配置名未变化。", L"MyCross", MB_OK | MB_ICONINFORMATION);
+        return;
+    }
+
+    const std::wstring oldPath = BuildProfilePath(g_activeProfileName);
+    const std::wstring newPath = BuildProfilePath(newName);
+
+    if (GetFileAttributesW(newPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+        MessageBoxW(g_mainWindow, L"目标配置名已存在，请换一个名称。", L"MyCross", MB_OK | MB_ICONWARNING);
+        return;
+    }
+
+    if (!MoveFileW(oldPath.c_str(), newPath.c_str())) {
+        MessageBoxW(g_mainWindow, L"重命名失败。", L"MyCross", MB_OK | MB_ICONERROR);
+        return;
+    }
+
+    g_activeProfileName = newName;
+    RefreshProfileList(newName);
+    MessageBoxW(g_mainWindow, L"配置重命名成功。", L"MyCross", MB_OK | MB_ICONINFORMATION);
 }
 
 HWND CreateLabel(HWND parent, const wchar_t* text, int x, int y, int w, int h)
@@ -671,6 +791,10 @@ void CreateMainControls(HWND hwnd)
     g_buttonRefresh = CreateButton(hwnd, L"刷新", IDC_BUTTON_REFRESH, 420, 134, 80, 32);
     g_buttonNew = CreateButton(hwnd, L"新建配置", IDC_BUTTON_NEW, 508, 134, 110, 32);
     g_buttonSave = CreateButton(hwnd, L"保存当前配置", IDC_BUTTON_SAVE, 420, 176, 198, 32);
+
+    CreateLabel(hwnd, L"配置名", 38, 178, 90, 24);
+    g_editProfileName = CreateEdit(hwnd, IDC_EDIT_PROFILE_NAME, 124, 176, 280, 30);
+    g_buttonRename = CreateButton(hwnd, L"重命名当前", IDC_BUTTON_RENAME, 508, 176, 110, 32);
 
     CreateSectionTitle(hwnd, L"准星参数", 36, 232, 140, 28);
     CreateLabel(hwnd, L"X (-1=居中)", 38, 272, 120, 24);
@@ -798,6 +922,10 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
         case IDC_BUTTON_SAVE:
             SaveCurrentProfile();
+            return 0;
+
+        case IDC_BUTTON_RENAME:
+            RenameCurrentProfile();
             return 0;
 
         case IDC_BUTTON_TOGGLE:
