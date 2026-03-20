@@ -911,6 +911,9 @@ bool StartHttpServer()
         return false;
     }
 
+    u_long nonBlocking = 1;
+    ioctlsocket(g_listenSocket, FIONBIO, &nonBlocking);
+
     return true;
 }
 
@@ -1095,10 +1098,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
     }
 
     while (!g_exitRequested) {
+        if (g_webAppProcess.hProcess != nullptr) {
+            const DWORD appState = WaitForSingleObject(g_webAppProcess.hProcess, 0);
+            if (appState == WAIT_OBJECT_0) {
+                g_exitRequested = true;
+                break;
+            }
+        }
+
         sockaddr_in clientAddr = {};
         int len = sizeof(clientAddr);
         SOCKET client = accept(g_listenSocket, reinterpret_cast<sockaddr*>(&clientAddr), &len);
         if (client == INVALID_SOCKET) {
+            const int err = WSAGetLastError();
+            if (err == WSAEWOULDBLOCK) {
+                Sleep(40);
+                continue;
+            }
             if (g_exitRequested) {
                 break;
             }
