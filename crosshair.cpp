@@ -9,6 +9,8 @@ constexpr int kWindowSize = 40;
 constexpr int kCrossHalf = 10;
 constexpr int kLineWidth = 2;
 constexpr int kHotkeyId = 1;
+constexpr UINT kQuitHotkeyModifiers = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
+constexpr UINT kQuitHotkeyVirtualKey = VK_F12;
 
 int g_screenX = -1;
 int g_screenY = -1;
@@ -49,7 +51,7 @@ void ShowHelp()
         L"  crosshair.exe <x> <y>        -> place by coordinates\n"
         L"  crosshair.exe --x=<x> --y=<y>\n"
         L"\n"
-        L"Press Esc to quit.\n";
+        L"Press Ctrl + Alt + Shift + F12 to quit.\n";
 
     MessageBoxW(nullptr, message, L"MyCross Help", MB_OK | MB_ICONINFORMATION);
 }
@@ -184,7 +186,7 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int)
     // Make black background fully transparent.
     SetLayeredWindowAttributes(hwnd, RGB(0, 0, 0), 0, LWA_COLORKEY);
 
-    RegisterHotKey(hwnd, kHotkeyId, MOD_NOREPEAT, VK_ESCAPE);
+    RegisterHotKey(hwnd, kHotkeyId, kQuitHotkeyModifiers, kQuitHotkeyVirtualKey);
 
     ShowWindow(hwnd, SW_SHOW);
 
