@@ -923,6 +923,33 @@ void StopHttpServer()
     WSACleanup();
 }
 
+bool WaitForServerReady(int timeoutMs)
+{
+    const DWORD start = GetTickCount();
+    while (static_cast<int>(GetTickCount() - start) < timeoutMs) {
+        SOCKET s = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+        if (s == INVALID_SOCKET) {
+            Sleep(50);
+            continue;
+        }
+
+        sockaddr_in addr = {};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(kServerPort);
+        inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+        const int rc = connect(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+        closesocket(s);
+        if (rc == 0) {
+            return true;
+        }
+
+        Sleep(60);
+    }
+
+    return false;
+}
+
 void InitDefaultState()
 {
     EnsureConfigDirectory();
@@ -975,38 +1002,48 @@ std::wstring FindEdgeExecutable()
     return L"msedge.exe";
 }
 
+bool TryLaunchAppWindow(const std::wstring& edgeExe)
+{
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    ZeroMemory(&g_webAppProcess, sizeof(g_webAppProcess));
+
+    // Keep executable path in command line as argv[0], otherwise Chromium can treat the
+    // first switch as argv[0] and ignore app-mode arguments.
+    std::wstring cmd = L"\"" + edgeExe + L"\" --app=http://127.0.0.1:5188/ --new-window --window-size=1280,860";
+
+    BOOL ok = CreateProcessW(
+        nullptr,
+        cmd.data(),
+        nullptr,
+        nullptr,
+        FALSE,
+        0,
+        nullptr,
+        nullptr,
+        &si,
+        &g_webAppProcess);
+
+    if (!ok) {
+        g_lastAppLaunchError = GetLastError();
+        return false;
+    }
+
+    return true;
+}
+
 bool LaunchAppWindow()
 {
     g_lastAppLaunchError = 0;
-    std::vector<std::wstring> candidates = {
-        FindEdgeExecutable(),
-        L"msedge.exe"
-    };
+    const std::wstring primary = FindEdgeExecutable();
+    if (TryLaunchAppWindow(primary)) {
+        return true;
+    }
 
-    for (const auto& edgeExe : candidates) {
-        STARTUPINFOW si = {};
-        si.cb = sizeof(si);
-        ZeroMemory(&g_webAppProcess, sizeof(g_webAppProcess));
-
-        std::wstring cmd = L"--app=http://127.0.0.1:5188/ --new-window --window-size=1280,860";
-
-        BOOL ok = CreateProcessW(
-            edgeExe.c_str(),
-            cmd.data(),
-            nullptr,
-            nullptr,
-            FALSE,
-            0,
-            nullptr,
-            nullptr,
-            &si,
-            &g_webAppProcess);
-
-        if (ok == TRUE) {
+    if (_wcsicmp(primary.c_str(), L"msedge.exe") != 0) {
+        if (TryLaunchAppWindow(L"msedge.exe")) {
             return true;
         }
-
-        g_lastAppLaunchError = GetLastError();
     }
 
     return false;
@@ -1047,6 +1084,8 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         StopOverlayThread();
         return 1;
     }
+
+    WaitForServerReady(3000);
 
     if (!LaunchAppWindow()) {
         wchar_t msg[256] = {};
