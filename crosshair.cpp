@@ -78,7 +78,10 @@ bool g_overlayRunning = false;
 CrosshairConfig g_currentConfig;
 HFONT g_fontRegular = nullptr;
 HFONT g_fontTitle = nullptr;
+HFONT g_fontSection = nullptr;
 HBRUSH g_swatchBrush = nullptr;
+HBRUSH g_mainBgBrush = nullptr;
+HBRUSH g_cardBrush = nullptr;
 
 int ParseIntText(const wchar_t* text, int fallback)
 {
@@ -132,9 +135,24 @@ void CreateUiFonts()
 
     if (g_fontTitle == nullptr) {
         g_fontTitle = CreateFontW(
-            -24, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+            -30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
             DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    }
+
+    if (g_fontSection == nullptr) {
+        g_fontSection = CreateFontW(
+            -20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+            DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    }
+
+    if (g_mainBgBrush == nullptr) {
+        g_mainBgBrush = CreateSolidBrush(RGB(241, 244, 249));
+    }
+
+    if (g_cardBrush == nullptr) {
+        g_cardBrush = CreateSolidBrush(RGB(255, 255, 255));
     }
 }
 
@@ -151,6 +169,18 @@ void DestroyUiResources()
     if (g_fontTitle != nullptr) {
         DeleteObject(g_fontTitle);
         g_fontTitle = nullptr;
+    }
+    if (g_fontSection != nullptr) {
+        DeleteObject(g_fontSection);
+        g_fontSection = nullptr;
+    }
+    if (g_mainBgBrush != nullptr) {
+        DeleteObject(g_mainBgBrush);
+        g_mainBgBrush = nullptr;
+    }
+    if (g_cardBrush != nullptr) {
+        DeleteObject(g_cardBrush);
+        g_cardBrush = nullptr;
     }
 }
 
@@ -302,6 +332,8 @@ void UpdateToggleButtonText()
     SetWindowTextW(g_toggleButton, g_overlayRunning ? L"停止准星叠加" : L"启动准星叠加");
     if (g_statusLabel != nullptr) {
         SetWindowTextW(g_statusLabel, g_overlayRunning ? L"状态: 运行中" : L"状态: 已停止");
+        InvalidateRect(g_statusLabel, nullptr, TRUE);
+        UpdateWindow(g_statusLabel);
     }
 }
 
@@ -593,76 +625,94 @@ HWND CreateButton(HWND parent, const wchar_t* text, int id, int x, int y, int w,
     return button;
 }
 
+HWND CreateSectionTitle(HWND parent, const wchar_t* text, int x, int y, int w, int h)
+{
+    HWND label = CreateWindowW(
+        L"STATIC",
+        text,
+        WS_CHILD | WS_VISIBLE,
+        x,
+        y,
+        w,
+        h,
+        parent,
+        nullptr,
+        g_instance,
+        nullptr);
+    SetControlFont(label, g_fontSection);
+    return label;
+}
+
 void CreateMainControls(HWND hwnd)
 {
     CreateUiFonts();
 
     HWND title = CreateWindowW(L"STATIC", L"MyCross 控制台", WS_CHILD | WS_VISIBLE,
-        24, 16, 260, 34, hwnd, nullptr, g_instance, nullptr);
+        28, 18, 340, 42, hwnd, nullptr, g_instance, nullptr);
     SetControlFont(title, g_fontTitle);
-    CreateLabel(hwnd, L"更美观的参数面板，支持多配置管理", 24, 48, 340, 24);
+    CreateLabel(hwnd, L"专业级准星控制面板", 30, 62, 320, 24);
 
-    CreateWindowW(L"BUTTON", L"配置文件", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 20, 78, 652, 92, hwnd, nullptr, g_instance, nullptr);
-    CreateWindowW(L"BUTTON", L"准星参数", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 20, 178, 652, 206, hwnd, nullptr, g_instance, nullptr);
-    CreateWindowW(L"BUTTON", L"操作", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 20, 392, 652, 120, hwnd, nullptr, g_instance, nullptr);
-
-    CreateLabel(hwnd, L"当前配置", 36, 114, 90, 24);
+    CreateSectionTitle(hwnd, L"配置管理", 36, 98, 140, 28);
+    CreateLabel(hwnd, L"当前配置", 38, 136, 90, 24);
     g_profileCombo = CreateWindowW(
         L"COMBOBOX",
         L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-        118,
-        112,
-        250,
-        300,
+        124,
+        134,
+        280,
+        240,
         hwnd,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PROFILE_COMBO)),
         g_instance,
         nullptr);
     SetControlFont(g_profileCombo, g_fontRegular);
 
-    g_buttonRefresh = CreateButton(hwnd, L"刷新", IDC_BUTTON_REFRESH, 386, 111, 80, 30);
-    g_buttonNew = CreateButton(hwnd, L"新建配置", IDC_BUTTON_NEW, 474, 111, 96, 30);
-    g_buttonSave = CreateButton(hwnd, L"保存当前配置", IDC_BUTTON_SAVE, 578, 111, 86, 30);
+    g_buttonRefresh = CreateButton(hwnd, L"刷新", IDC_BUTTON_REFRESH, 420, 134, 80, 32);
+    g_buttonNew = CreateButton(hwnd, L"新建配置", IDC_BUTTON_NEW, 508, 134, 110, 32);
+    g_buttonSave = CreateButton(hwnd, L"保存当前配置", IDC_BUTTON_SAVE, 420, 176, 198, 32);
 
-    CreateLabel(hwnd, L"X (-1=居中)", 36, 220, 120, 24);
-    CreateLabel(hwnd, L"Y (-1=居中)", 36, 258, 120, 24);
-    CreateLabel(hwnd, L"窗口尺寸", 36, 296, 120, 24);
-    CreateLabel(hwnd, L"准星半径", 36, 334, 120, 24);
-    CreateLabel(hwnd, L"线宽", 36, 372, 120, 24);
+    CreateSectionTitle(hwnd, L"准星参数", 36, 232, 140, 28);
+    CreateLabel(hwnd, L"X (-1=居中)", 38, 272, 120, 24);
+    CreateLabel(hwnd, L"Y (-1=居中)", 38, 314, 120, 24);
+    CreateLabel(hwnd, L"窗口尺寸", 38, 356, 120, 24);
+    CreateLabel(hwnd, L"准星半径", 38, 398, 120, 24);
+    CreateLabel(hwnd, L"线宽", 38, 440, 120, 24);
 
-    g_editX = CreateEdit(hwnd, IDC_EDIT_X, 132, 218, 110, 26);
-    g_editY = CreateEdit(hwnd, IDC_EDIT_Y, 132, 256, 110, 26);
-    g_editWindowSize = CreateEdit(hwnd, IDC_EDIT_WINDOW_SIZE, 132, 294, 110, 26);
-    g_editCrossHalf = CreateEdit(hwnd, IDC_EDIT_CROSS_HALF, 132, 332, 110, 26);
-    g_editLineWidth = CreateEdit(hwnd, IDC_EDIT_LINE_WIDTH, 132, 370, 110, 26);
+    g_editX = CreateEdit(hwnd, IDC_EDIT_X, 136, 270, 120, 30);
+    g_editY = CreateEdit(hwnd, IDC_EDIT_Y, 136, 312, 120, 30);
+    g_editWindowSize = CreateEdit(hwnd, IDC_EDIT_WINDOW_SIZE, 136, 354, 120, 30);
+    g_editCrossHalf = CreateEdit(hwnd, IDC_EDIT_CROSS_HALF, 136, 396, 120, 30);
+    g_editLineWidth = CreateEdit(hwnd, IDC_EDIT_LINE_WIDTH, 136, 438, 120, 30);
 
-    CreateLabel(hwnd, L"颜色 R", 302, 220, 70, 24);
-    CreateLabel(hwnd, L"颜色 G", 302, 258, 70, 24);
-    CreateLabel(hwnd, L"颜色 B", 302, 296, 70, 24);
+    CreateLabel(hwnd, L"颜色 R", 308, 272, 70, 24);
+    CreateLabel(hwnd, L"颜色 G", 308, 314, 70, 24);
+    CreateLabel(hwnd, L"颜色 B", 308, 356, 70, 24);
 
-    g_editR = CreateEdit(hwnd, IDC_EDIT_R, 372, 218, 90, 26);
-    g_editG = CreateEdit(hwnd, IDC_EDIT_G, 372, 256, 90, 26);
-    g_editB = CreateEdit(hwnd, IDC_EDIT_B, 372, 294, 90, 26);
+    g_editR = CreateEdit(hwnd, IDC_EDIT_R, 380, 270, 100, 30);
+    g_editG = CreateEdit(hwnd, IDC_EDIT_G, 380, 312, 100, 30);
+    g_editB = CreateEdit(hwnd, IDC_EDIT_B, 380, 354, 100, 30);
 
-    CreateLabel(hwnd, L"颜色预览", 505, 220, 100, 24);
+    CreateLabel(hwnd, L"颜色预览", 514, 272, 100, 24);
     g_colorSwatch = CreateWindowExW(
         WS_EX_CLIENTEDGE,
         L"STATIC",
         L"",
         WS_CHILD | WS_VISIBLE,
-        505,
-        246,
-        140,
-        64,
+        514,
+        304,
+        126,
+        96,
         hwnd,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_COLOR_SWATCH)),
         g_instance,
         nullptr);
+    SetControlFont(g_colorSwatch, g_fontRegular);
 
-    g_toggleButton = CreateButton(hwnd, L"启动准星叠加", IDC_BUTTON_TOGGLE, 36, 426, 300, 52);
-    g_statusLabel = CreateLabel(hwnd, L"状态: 已停止", 358, 426, 200, 26);
-    CreateLabel(hwnd, L"全局关闭热键: Ctrl + Alt + Shift + F12", 358, 452, 300, 24);
+    CreateSectionTitle(hwnd, L"运行控制", 308, 408, 140, 28);
+    g_toggleButton = CreateButton(hwnd, L"启动准星叠加", IDC_BUTTON_TOGGLE, 308, 440, 240, 44);
+    g_statusLabel = CreateLabel(hwnd, L"状态: 已停止", 546, 444, 130, 24);
+    CreateLabel(hwnd, L"全局热键: Ctrl + Alt + Shift + F12", 308, 492, 320, 24);
 }
 
 bool IsConfigEditId(int id)
@@ -770,12 +820,10 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             return reinterpret_cast<INT_PTR>(g_swatchBrush);
         }
 
+        SetTextColor(hdc, RGB(28, 33, 40));
         SetBkMode(hdc, TRANSPARENT);
-        return reinterpret_cast<INT_PTR>(GetStockObject(NULL_BRUSH));
+        return reinterpret_cast<INT_PTR>(g_mainBgBrush != nullptr ? g_mainBgBrush : GetSysColorBrush(COLOR_WINDOW));
     }
-
-    case WM_ERASEBKGND:
-        return 1;
 
     case WM_PAINT: {
         PAINTSTRUCT ps = {};
@@ -783,9 +831,25 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         RECT rc = {};
         GetClientRect(hwnd, &rc);
 
-        HBRUSH bg = CreateSolidBrush(RGB(245, 247, 252));
-        FillRect(hdc, &rc, bg);
-        DeleteObject(bg);
+        FillRect(hdc, &rc, g_mainBgBrush != nullptr ? g_mainBgBrush : GetSysColorBrush(COLOR_WINDOW));
+
+        RECT cardTop = { 24, 88, 676, 220 };
+        RECT cardBody = { 24, 222, 676, 478 };
+        RECT cardAction = { 292, 398, 676, 532 };
+
+        FillRect(hdc, &cardTop, g_cardBrush != nullptr ? g_cardBrush : GetSysColorBrush(COLOR_WINDOW));
+        FillRect(hdc, &cardBody, g_cardBrush != nullptr ? g_cardBrush : GetSysColorBrush(COLOR_WINDOW));
+        FillRect(hdc, &cardAction, g_cardBrush != nullptr ? g_cardBrush : GetSysColorBrush(COLOR_WINDOW));
+
+        HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(220, 226, 236));
+        HGDIOBJ oldPen = SelectObject(hdc, borderPen);
+        HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
+        Rectangle(hdc, cardTop.left, cardTop.top, cardTop.right, cardTop.bottom);
+        Rectangle(hdc, cardBody.left, cardBody.top, cardBody.right, cardBody.bottom);
+        Rectangle(hdc, cardAction.left, cardAction.top, cardAction.right, cardAction.bottom);
+        SelectObject(hdc, oldBrush);
+        SelectObject(hdc, oldPen);
+        DeleteObject(borderPen);
 
         EndPaint(hwnd, &ps);
         return 0;
@@ -818,7 +882,7 @@ bool RegisterMainWindowClass()
     wc.lpfnWndProc = MainWndProc;
     wc.hInstance = g_instance;
     wc.lpszClassName = kMainWindowClass;
-    wc.hbrBackground = nullptr;
+    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
 
     return RegisterClassW(&wc) != 0;
 }
