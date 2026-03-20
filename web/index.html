@@ -325,6 +325,13 @@
       }
     }
 
+    async function ping() {
+      try {
+        await post("/api/ping", {});
+      } catch (_) {
+      }
+    }
+
     ids.forEach(id => document.getElementById(id).addEventListener("input", refreshSwatch));
 
     document.getElementById("applyBtn").addEventListener("click", async () => {
@@ -405,6 +412,10 @@
 
     refreshAll();
     setInterval(refreshAll, 3000);
+    setInterval(ping, 1000);
+    window.addEventListener("beforeunload", () => {
+      navigator.sendBeacon("/api/quit", "");
+    });
   </script>
 </body>
 </html>

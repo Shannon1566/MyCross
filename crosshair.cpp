@@ -57,6 +57,9 @@ std::thread g_overlayThread;
 SOCKET g_listenSocket = INVALID_SOCKET;
 PROCESS_INFORMATION g_webAppProcess = {};
 DWORD g_lastAppLaunchError = 0;
+std::atomic<DWORD> g_lastUiPingTick{0};
+bool g_appWindowMode = false;
+constexpr DWORD kUiHeartbeatTimeoutMs = 15000;
 
 int ClampInt(int value, int minV, int maxV)
 {
@@ -635,8 +638,15 @@ void ApplyCommandLineArgs()
 
 bool HandleApi(SOCKET client, const std::string& method, const std::string& path, const std::string& body)
 {
+    g_lastUiPingTick = GetTickCount();
+
     if (method == "GET" && path == "/api/state") {
         SendHttp(client, 200, "OK", "application/json; charset=utf-8", BuildStateJson());
+        return true;
+    }
+
+    if (method == "POST" && path == "/api/ping") {
+        SendHttp(client, 200, "OK", "text/plain; charset=utf-8", "pong");
         return true;
     }
 
@@ -1089,18 +1099,23 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
     }
 
     WaitForServerReady(3000);
+    g_lastUiPingTick = GetTickCount();
 
     if (!LaunchAppWindow()) {
         wchar_t msg[256] = {};
         swprintf(msg, 256, L"启动应用窗口失败（错误码: %lu），已回退到默认浏览器。", g_lastAppLaunchError);
         MessageBoxW(nullptr, msg, L"MyCross", MB_OK | MB_ICONWARNING);
         ShellExecuteW(nullptr, L"open", L"http://127.0.0.1:5188/", nullptr, nullptr, SW_SHOWNORMAL);
+        g_appWindowMode = false;
+    } else {
+        g_appWindowMode = true;
     }
 
     while (!g_exitRequested) {
-        if (g_webAppProcess.hProcess != nullptr) {
-            const DWORD appState = WaitForSingleObject(g_webAppProcess.hProcess, 0);
-            if (appState == WAIT_OBJECT_0) {
+        if (g_appWindowMode) {
+            const DWORD now = GetTickCount();
+            const DWORD lastPing = g_lastUiPingTick.load();
+            if (now - lastPing > kUiHeartbeatTimeoutMs) {
                 g_exitRequested = true;
                 break;
             }
