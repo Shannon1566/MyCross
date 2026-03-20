@@ -102,7 +102,6 @@
     function normName(n){n=(n||"").trim();if(!n)return"";return /\.ini$/i.test(n)?n:`${n}.ini`;}
 
     let dirty = false;
-    let autoApplyTimer = null;
     let inAutoApply = false;
 
     function render(s, forceFill=false){
@@ -136,12 +135,17 @@
       }
     }
 
-    function scheduleAutoApply(){
-      if (autoApplyTimer) clearTimeout(autoApplyTimer);
-      autoApplyTimer = setTimeout(autoApplyNow, 220);
-    }
-
-    keys.forEach(k=>$(k).addEventListener('input',()=>{dirty=true;paintSwatch();scheduleAutoApply();}));
+    keys.forEach(k=>{
+      const el = $(k);
+      el.addEventListener('input', ()=>{ dirty = true; paintSwatch(); });
+      el.addEventListener('blur', ()=>{ if (dirty) autoApplyNow(); });
+      el.addEventListener('keydown', (e)=>{
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          autoApplyNow();
+        }
+      });
+    });
     $("toggleBtn").onclick=async()=>{try{const s=await state();render(await post('/api/toggle',{running:s.running?0:1}),false)}catch(e){alert(`切换失败: ${e.message}`)}};
     $("loadBtn").onclick=async()=>{const n=$("profileSelect").value;if(!n)return;try{const s=await post('/api/profile/load',{name:n});dirty=false;render(s,true)}catch(e){alert(`加载失败: ${e.message}`)}};
     $("saveBtn").onclick=async()=>{try{const s=await post('/api/profile/save',{...formData(),name:$("profileName").value.trim()});dirty=false;render(s,true)}catch(e){alert(`保存失败: ${e.message}`)}};
