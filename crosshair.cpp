@@ -17,8 +17,8 @@ constexpr int kDefaultColorR = 0;
 constexpr int kDefaultColorG = 255;
 constexpr int kDefaultColorB = 0;
 
-constexpr int kMainWindowWidth = 520;
-constexpr int kMainWindowHeight = 430;
+constexpr int kMainWindowWidth = 700;
+constexpr int kMainWindowHeight = 560;
 
 constexpr int kHotkeyId = 1;
 constexpr UINT kQuitHotkeyModifiers = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
@@ -29,6 +29,8 @@ constexpr int IDC_BUTTON_REFRESH = 1002;
 constexpr int IDC_BUTTON_NEW = 1003;
 constexpr int IDC_BUTTON_SAVE = 1004;
 constexpr int IDC_BUTTON_TOGGLE = 1005;
+constexpr int IDC_COLOR_SWATCH = 1006;
+constexpr int IDC_STATUS_LABEL = 1007;
 
 constexpr int IDC_EDIT_X = 1101;
 constexpr int IDC_EDIT_Y = 1102;
@@ -55,6 +57,11 @@ HWND g_mainWindow = nullptr;
 HWND g_overlayWindow = nullptr;
 HWND g_profileCombo = nullptr;
 HWND g_toggleButton = nullptr;
+HWND g_buttonRefresh = nullptr;
+HWND g_buttonNew = nullptr;
+HWND g_buttonSave = nullptr;
+HWND g_statusLabel = nullptr;
+HWND g_colorSwatch = nullptr;
 HWND g_editX = nullptr;
 HWND g_editY = nullptr;
 HWND g_editWindowSize = nullptr;
@@ -69,6 +76,9 @@ std::wstring g_configDir;
 std::wstring g_activeProfileName;
 bool g_overlayRunning = false;
 CrosshairConfig g_currentConfig;
+HFONT g_fontRegular = nullptr;
+HFONT g_fontTitle = nullptr;
+HBRUSH g_swatchBrush = nullptr;
 
 int ParseIntText(const wchar_t* text, int fallback)
 {
@@ -109,6 +119,39 @@ std::wstring GetExeDir()
 std::wstring BuildProfilePath(const std::wstring& profileName)
 {
     return g_configDir + L"\\" + profileName;
+}
+
+void CreateUiFonts()
+{
+    if (g_fontRegular == nullptr) {
+        g_fontRegular = CreateFontW(
+            -18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+            DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    }
+
+    if (g_fontTitle == nullptr) {
+        g_fontTitle = CreateFontW(
+            -24, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
+            DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
+    }
+}
+
+void DestroyUiResources()
+{
+    if (g_swatchBrush != nullptr) {
+        DeleteObject(g_swatchBrush);
+        g_swatchBrush = nullptr;
+    }
+    if (g_fontRegular != nullptr) {
+        DeleteObject(g_fontRegular);
+        g_fontRegular = nullptr;
+    }
+    if (g_fontTitle != nullptr) {
+        DeleteObject(g_fontTitle);
+        g_fontTitle = nullptr;
+    }
 }
 
 std::vector<std::wstring> EnumerateProfiles()
@@ -197,11 +240,31 @@ void SetEditValue(HWND edit, int value)
     SetWindowTextW(edit, IntToWString(value).c_str());
 }
 
+void SetControlFont(HWND control, HFONT font)
+{
+    if (control != nullptr && font != nullptr) {
+        SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    }
+}
+
 int ReadEditValue(HWND edit, int fallback)
 {
     wchar_t text[64] = {};
     GetWindowTextW(edit, text, 64);
     return ParseIntText(text, fallback);
+}
+
+void UpdateColorSwatch(const CrosshairConfig& config)
+{
+    if (g_swatchBrush != nullptr) {
+        DeleteObject(g_swatchBrush);
+        g_swatchBrush = nullptr;
+    }
+
+    g_swatchBrush = CreateSolidBrush(RGB(config.colorR, config.colorG, config.colorB));
+    if (g_colorSwatch != nullptr) {
+        InvalidateRect(g_colorSwatch, nullptr, TRUE);
+    }
 }
 
 void FillUiFromConfig(const CrosshairConfig& config)
@@ -214,6 +277,7 @@ void FillUiFromConfig(const CrosshairConfig& config)
     SetEditValue(g_editR, config.colorR);
     SetEditValue(g_editG, config.colorG);
     SetEditValue(g_editB, config.colorB);
+    UpdateColorSwatch(config);
 }
 
 CrosshairConfig ReadConfigFromUi()
@@ -235,7 +299,10 @@ CrosshairConfig ReadConfigFromUi()
 
 void UpdateToggleButtonText()
 {
-    SetWindowTextW(g_toggleButton, g_overlayRunning ? L"关闭准星" : L"打开准星");
+    SetWindowTextW(g_toggleButton, g_overlayRunning ? L"停止准星叠加" : L"启动准星叠加");
+    if (g_statusLabel != nullptr) {
+        SetWindowTextW(g_statusLabel, g_overlayRunning ? L"状态: 运行中" : L"状态: 已停止");
+    }
 }
 
 RECT ComputeOverlayRect(const CrosshairConfig& config)
@@ -331,11 +398,13 @@ void ToggleOverlay()
 
 void ApplyConfigToOverlayIfRunning()
 {
+    g_currentConfig = ReadConfigFromUi();
+    UpdateColorSwatch(g_currentConfig);
+
     if (!g_overlayRunning) {
         return;
     }
 
-    g_currentConfig = ReadConfigFromUi();
     ApplyOverlayLayout();
 }
 
@@ -471,16 +540,29 @@ void CreateNewProfileFromCurrent()
 
 HWND CreateLabel(HWND parent, const wchar_t* text, int x, int y, int w, int h)
 {
-    return CreateWindowW(L"STATIC", text, WS_CHILD | WS_VISIBLE, x, y, w, h, parent, nullptr, g_instance, nullptr);
+    HWND label = CreateWindowW(
+        L"STATIC",
+        text,
+        WS_CHILD | WS_VISIBLE,
+        x,
+        y,
+        w,
+        h,
+        parent,
+        nullptr,
+        g_instance,
+        nullptr);
+    SetControlFont(label, g_fontRegular);
+    return label;
 }
 
 HWND CreateEdit(HWND parent, int id, int x, int y, int w, int h)
 {
-    return CreateWindowExW(
+    HWND edit = CreateWindowExW(
         WS_EX_CLIENTEDGE,
         L"EDIT",
         L"",
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
+        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_CENTER,
         x,
         y,
         w,
@@ -489,64 +571,105 @@ HWND CreateEdit(HWND parent, int id, int x, int y, int w, int h)
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
         g_instance,
         nullptr);
+    SetControlFont(edit, g_fontRegular);
+    return edit;
+}
+
+HWND CreateButton(HWND parent, const wchar_t* text, int id, int x, int y, int w, int h)
+{
+    HWND button = CreateWindowW(
+        L"BUTTON",
+        text,
+        WS_CHILD | WS_VISIBLE | BS_FLAT,
+        x,
+        y,
+        w,
+        h,
+        parent,
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
+        g_instance,
+        nullptr);
+    SetControlFont(button, g_fontRegular);
+    return button;
 }
 
 void CreateMainControls(HWND hwnd)
 {
-    CreateLabel(hwnd, L"配置文件", 20, 20, 80, 24);
+    CreateUiFonts();
 
+    HWND title = CreateWindowW(L"STATIC", L"MyCross 控制台", WS_CHILD | WS_VISIBLE,
+        24, 16, 260, 34, hwnd, nullptr, g_instance, nullptr);
+    SetControlFont(title, g_fontTitle);
+    CreateLabel(hwnd, L"更美观的参数面板，支持多配置管理", 24, 48, 340, 24);
+
+    CreateWindowW(L"BUTTON", L"配置文件", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 20, 78, 652, 92, hwnd, nullptr, g_instance, nullptr);
+    CreateWindowW(L"BUTTON", L"准星参数", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 20, 178, 652, 206, hwnd, nullptr, g_instance, nullptr);
+    CreateWindowW(L"BUTTON", L"操作", WS_CHILD | WS_VISIBLE | BS_GROUPBOX, 20, 392, 652, 120, hwnd, nullptr, g_instance, nullptr);
+
+    CreateLabel(hwnd, L"当前配置", 36, 114, 90, 24);
     g_profileCombo = CreateWindowW(
         L"COMBOBOX",
         L"",
         WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-        100,
-        18,
+        118,
+        112,
         250,
-        220,
+        300,
         hwnd,
         reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PROFILE_COMBO)),
         g_instance,
         nullptr);
+    SetControlFont(g_profileCombo, g_fontRegular);
 
-    CreateWindowW(L"BUTTON", L"刷新", WS_CHILD | WS_VISIBLE, 365, 18, 60, 24, hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_BUTTON_REFRESH)), g_instance, nullptr);
-    CreateWindowW(L"BUTTON", L"新建", WS_CHILD | WS_VISIBLE, 430, 18, 60, 24, hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_BUTTON_NEW)), g_instance, nullptr);
-    CreateWindowW(L"BUTTON", L"保存", WS_CHILD | WS_VISIBLE, 365, 50, 125, 28, hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_BUTTON_SAVE)), g_instance, nullptr);
+    g_buttonRefresh = CreateButton(hwnd, L"刷新", IDC_BUTTON_REFRESH, 386, 111, 80, 30);
+    g_buttonNew = CreateButton(hwnd, L"新建配置", IDC_BUTTON_NEW, 474, 111, 96, 30);
+    g_buttonSave = CreateButton(hwnd, L"保存当前配置", IDC_BUTTON_SAVE, 578, 111, 86, 30);
 
-    CreateLabel(hwnd, L"坐标X (-1=居中)", 20, 95, 120, 24);
-    CreateLabel(hwnd, L"坐标Y (-1=居中)", 20, 129, 120, 24);
-    CreateLabel(hwnd, L"窗口尺寸", 20, 163, 120, 24);
-    CreateLabel(hwnd, L"准星半径", 20, 197, 120, 24);
-    CreateLabel(hwnd, L"线宽", 20, 231, 120, 24);
-    CreateLabel(hwnd, L"颜色R", 270, 95, 60, 24);
-    CreateLabel(hwnd, L"颜色G", 270, 129, 60, 24);
-    CreateLabel(hwnd, L"颜色B", 270, 163, 60, 24);
+    CreateLabel(hwnd, L"X (-1=居中)", 36, 220, 120, 24);
+    CreateLabel(hwnd, L"Y (-1=居中)", 36, 258, 120, 24);
+    CreateLabel(hwnd, L"窗口尺寸", 36, 296, 120, 24);
+    CreateLabel(hwnd, L"准星半径", 36, 334, 120, 24);
+    CreateLabel(hwnd, L"线宽", 36, 372, 120, 24);
 
-    g_editX = CreateEdit(hwnd, IDC_EDIT_X, 145, 92, 100, 24);
-    g_editY = CreateEdit(hwnd, IDC_EDIT_Y, 145, 126, 100, 24);
-    g_editWindowSize = CreateEdit(hwnd, IDC_EDIT_WINDOW_SIZE, 145, 160, 100, 24);
-    g_editCrossHalf = CreateEdit(hwnd, IDC_EDIT_CROSS_HALF, 145, 194, 100, 24);
-    g_editLineWidth = CreateEdit(hwnd, IDC_EDIT_LINE_WIDTH, 145, 228, 100, 24);
-    g_editR = CreateEdit(hwnd, IDC_EDIT_R, 335, 92, 80, 24);
-    g_editG = CreateEdit(hwnd, IDC_EDIT_G, 335, 126, 80, 24);
-    g_editB = CreateEdit(hwnd, IDC_EDIT_B, 335, 160, 80, 24);
+    g_editX = CreateEdit(hwnd, IDC_EDIT_X, 132, 218, 110, 26);
+    g_editY = CreateEdit(hwnd, IDC_EDIT_Y, 132, 256, 110, 26);
+    g_editWindowSize = CreateEdit(hwnd, IDC_EDIT_WINDOW_SIZE, 132, 294, 110, 26);
+    g_editCrossHalf = CreateEdit(hwnd, IDC_EDIT_CROSS_HALF, 132, 332, 110, 26);
+    g_editLineWidth = CreateEdit(hwnd, IDC_EDIT_LINE_WIDTH, 132, 370, 110, 26);
 
-    g_toggleButton = CreateWindowW(
-        L"BUTTON",
-        L"打开准星",
+    CreateLabel(hwnd, L"颜色 R", 302, 220, 70, 24);
+    CreateLabel(hwnd, L"颜色 G", 302, 258, 70, 24);
+    CreateLabel(hwnd, L"颜色 B", 302, 296, 70, 24);
+
+    g_editR = CreateEdit(hwnd, IDC_EDIT_R, 372, 218, 90, 26);
+    g_editG = CreateEdit(hwnd, IDC_EDIT_G, 372, 256, 90, 26);
+    g_editB = CreateEdit(hwnd, IDC_EDIT_B, 372, 294, 90, 26);
+
+    CreateLabel(hwnd, L"颜色预览", 505, 220, 100, 24);
+    g_colorSwatch = CreateWindowExW(
+        WS_EX_CLIENTEDGE,
+        L"STATIC",
+        L"",
         WS_CHILD | WS_VISIBLE,
-        20,
-        285,
-        470,
-        45,
+        505,
+        246,
+        140,
+        64,
         hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_BUTTON_TOGGLE)),
+        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_COLOR_SWATCH)),
         g_instance,
         nullptr);
 
-    CreateLabel(hwnd, L"热键关闭：Ctrl + Alt + Shift + F12", 20, 345, 300, 22);
+    g_toggleButton = CreateButton(hwnd, L"启动准星叠加", IDC_BUTTON_TOGGLE, 36, 426, 300, 52);
+    g_statusLabel = CreateLabel(hwnd, L"状态: 已停止", 358, 426, 200, 26);
+    CreateLabel(hwnd, L"全局关闭热键: Ctrl + Alt + Shift + F12", 358, 452, 300, 24);
+}
+
+bool IsConfigEditId(int id)
+{
+    return id == IDC_EDIT_X || id == IDC_EDIT_Y || id == IDC_EDIT_WINDOW_SIZE ||
+        id == IDC_EDIT_CROSS_HALF || id == IDC_EDIT_LINE_WIDTH ||
+        id == IDC_EDIT_R || id == IDC_EDIT_G || id == IDC_EDIT_B;
 }
 
 LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
@@ -604,6 +727,11 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         const int id = LOWORD(wParam);
         const int notifyCode = HIWORD(wParam);
 
+        if (IsConfigEditId(id) && notifyCode == EN_CHANGE) {
+            ApplyConfigToOverlayIfRunning();
+            return 0;
+        }
+
         if (id == IDC_PROFILE_COMBO && notifyCode == CBN_SELCHANGE) {
             LoadSelectedProfileToUi();
             return 0;
@@ -633,6 +761,36 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         return 0;
     }
 
+    case WM_CTLCOLORSTATIC: {
+        HDC hdc = reinterpret_cast<HDC>(wParam);
+        HWND ctrl = reinterpret_cast<HWND>(lParam);
+
+        if (ctrl == g_colorSwatch && g_swatchBrush != nullptr) {
+            SetBkMode(hdc, OPAQUE);
+            return reinterpret_cast<INT_PTR>(g_swatchBrush);
+        }
+
+        SetBkMode(hdc, TRANSPARENT);
+        return reinterpret_cast<INT_PTR>(GetStockObject(NULL_BRUSH));
+    }
+
+    case WM_ERASEBKGND:
+        return 1;
+
+    case WM_PAINT: {
+        PAINTSTRUCT ps = {};
+        HDC hdc = BeginPaint(hwnd, &ps);
+        RECT rc = {};
+        GetClientRect(hwnd, &rc);
+
+        HBRUSH bg = CreateSolidBrush(RGB(245, 247, 252));
+        FillRect(hdc, &rc, bg);
+        DeleteObject(bg);
+
+        EndPaint(hwnd, &ps);
+        return 0;
+    }
+
     case WM_HOTKEY:
         if (wParam == kHotkeyId) {
             StopOverlay();
@@ -643,6 +801,7 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     case WM_DESTROY:
         StopOverlay();
         UnregisterHotKey(hwnd, kHotkeyId);
+        DestroyUiResources();
         PostQuitMessage(0);
         return 0;
 
@@ -659,7 +818,7 @@ bool RegisterMainWindowClass()
     wc.lpfnWndProc = MainWndProc;
     wc.hInstance = g_instance;
     wc.lpszClassName = kMainWindowClass;
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    wc.hbrBackground = nullptr;
 
     return RegisterClassW(&wc) != 0;
 }
