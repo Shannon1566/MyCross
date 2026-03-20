@@ -1,0 +1,410 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MyCross Web 控制台</title>
+  <style>
+    :root {
+      --bg-0: #0d1117;
+      --bg-1: #121826;
+      --card: rgba(255, 255, 255, 0.08);
+      --card-border: rgba(255, 255, 255, 0.16);
+      --text-main: #eef2ff;
+      --text-sub: #a8b0c5;
+      --accent: #5eead4;
+      --accent-2: #22d3ee;
+      --danger: #fb7185;
+      --ok: #34d399;
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--text-main);
+      background:
+        radial-gradient(1200px 800px at 20% -10%, #1b2a4d 0%, transparent 70%),
+        radial-gradient(900px 700px at 100% 0%, #09303a 0%, transparent 70%),
+        linear-gradient(160deg, var(--bg-0), var(--bg-1));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 28px;
+    }
+
+    .panel {
+      width: min(1080px, 100%);
+      border: 1px solid var(--card-border);
+      border-radius: 24px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
+      backdrop-filter: blur(10px);
+      box-shadow: 0 32px 80px rgba(0,0,0,0.45);
+      padding: 26px;
+    }
+
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 18px;
+    }
+
+    .title {
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: 0.3px;
+    }
+
+    .hotkey {
+      font-size: 13px;
+      color: var(--text-sub);
+      border: 1px solid var(--card-border);
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(0,0,0,0.24);
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 16px;
+    }
+
+    .card {
+      border: 1px solid var(--card-border);
+      border-radius: var(--radius);
+      background: var(--card);
+      padding: 16px;
+    }
+
+    .card h3 {
+      margin: 0 0 12px;
+      font-size: 16px;
+      font-weight: 700;
+      color: #f8fbff;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 110px 1fr;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 10px;
+    }
+
+    .row.compact {
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px;
+    }
+
+    label {
+      color: var(--text-sub);
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    input, select, button {
+      width: 100%;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(9, 14, 24, 0.65);
+      color: var(--text-main);
+      font-size: 14px;
+      padding: 10px 12px;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    input:focus, select:focus {
+      border-color: var(--accent-2);
+      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
+    }
+
+    button {
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #042024;
+      border: 0;
+    }
+
+    .btn-soft {
+      background: rgba(255,255,255,0.1);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #fb7185, #f43f5e);
+      color: #fff;
+      border: 0;
+    }
+
+    .status {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--card-border);
+      background: rgba(0,0,0,0.24);
+      font-size: 13px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      background: var(--danger);
+      box-shadow: 0 0 10px rgba(251, 113, 133, 0.8);
+    }
+
+    .dot.on {
+      background: var(--ok);
+      box-shadow: 0 0 10px rgba(52, 211, 153, 0.8);
+    }
+
+    .swatch {
+      height: 70px;
+      border-radius: 12px;
+      border: 1px solid var(--card-border);
+      background: rgb(0,255,0);
+    }
+
+    .footer {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .muted {
+      color: var(--text-sub);
+      font-size: 12px;
+    }
+
+    @media (max-width: 900px) {
+      .grid { grid-template-columns: 1fr; }
+      .header { flex-direction: column; align-items: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <div class="panel">
+    <div class="header">
+      <div>
+        <div class="title">MyCross Web 控制台</div>
+        <div class="muted">现代化控制界面，支持多配置管理与实时应用</div>
+      </div>
+      <div class="hotkey">全局热键关闭: Ctrl + Alt + Shift + F12</div>
+    </div>
+
+    <div class="grid">
+      <section class="card">
+        <h3>配置管理</h3>
+        <div class="row">
+          <label for="profileSelect">已存在配置</label>
+          <select id="profileSelect"></select>
+        </div>
+        <div class="row">
+          <label for="profileName">配置名</label>
+          <input id="profileName" placeholder="例如: sniper.ini" />
+        </div>
+        <div class="row compact">
+          <button class="btn-soft" id="loadBtn">加载</button>
+          <button class="btn-soft" id="newBtn">新建</button>
+          <button class="btn-soft" id="renameBtn">重命名</button>
+        </div>
+        <div class="footer">
+          <button class="btn-primary" id="saveBtn">保存当前配置</button>
+          <button class="btn-danger" id="quitBtn">退出程序</button>
+        </div>
+      </section>
+
+      <section class="card">
+        <h3>准星参数</h3>
+        <div class="row"><label>X (-1居中)</label><input id="x" /></div>
+        <div class="row"><label>Y (-1居中)</label><input id="y" /></div>
+        <div class="row"><label>窗口尺寸</label><input id="window_size" /></div>
+        <div class="row"><label>准星半径</label><input id="cross_half" /></div>
+        <div class="row"><label>线宽</label><input id="line_width" /></div>
+        <div class="row"><label>颜色 R</label><input id="color_r" /></div>
+        <div class="row"><label>颜色 G</label><input id="color_g" /></div>
+        <div class="row"><label>颜色 B</label><input id="color_b" /></div>
+        <div class="row">
+          <label>颜色预览</label>
+          <div class="swatch" id="swatch"></div>
+        </div>
+      </section>
+    </div>
+
+    <div class="status">
+      <div style="display:flex;align-items:center;gap:10px;">
+        <span class="dot" id="statusDot"></span>
+        <span id="statusText">状态: 已停止</span>
+      </div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn-soft" id="applyBtn" style="width:auto;padding:8px 14px;">应用参数</button>
+        <button class="btn-primary" id="toggleBtn" style="width:auto;padding:8px 14px;">启动准星</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const ids = ["x","y","window_size","cross_half","line_width","color_r","color_g","color_b"];
+
+    async function post(path, form = {}) {
+      const body = new URLSearchParams(form).toString();
+      const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(t || `HTTP ${r.status}`);
+      }
+      const ct = r.headers.get("content-type") || "";
+      return ct.includes("application/json") ? r.json() : r.text();
+    }
+
+    async function getState() {
+      const r = await fetch("/api/state", { cache: "no-store" });
+      if (!r.ok) throw new Error("状态读取失败");
+      return r.json();
+    }
+
+    function fillForm(cfg) {
+      ids.forEach(id => document.getElementById(id).value = cfg[id]);
+      refreshSwatch();
+    }
+
+    function readForm() {
+      const out = {};
+      ids.forEach(id => out[id] = document.getElementById(id).value.trim());
+      return out;
+    }
+
+    function refreshSwatch() {
+      const r = Number(document.getElementById("color_r").value || 0);
+      const g = Number(document.getElementById("color_g").value || 0);
+      const b = Number(document.getElementById("color_b").value || 0);
+      document.getElementById("swatch").style.background = `rgb(${r}, ${g}, ${b})`;
+    }
+
+    function renderState(state) {
+      const sel = document.getElementById("profileSelect");
+      const current = state.active_profile || "";
+      sel.innerHTML = "";
+      (state.profiles || []).forEach(name => {
+        const op = document.createElement("option");
+        op.value = name;
+        op.textContent = name;
+        if (name === current) op.selected = true;
+        sel.appendChild(op);
+      });
+
+      document.getElementById("profileName").value = current;
+      fillForm(state.config);
+
+      const running = !!state.running;
+      document.getElementById("statusText").textContent = running ? "状态: 运行中" : "状态: 已停止";
+      document.getElementById("statusDot").classList.toggle("on", running);
+      document.getElementById("toggleBtn").textContent = running ? "停止准星" : "启动准星";
+    }
+
+    async function refreshAll() {
+      try {
+        renderState(await getState());
+      } catch (e) {
+        alert(`刷新失败: ${e.message}`);
+      }
+    }
+
+    ids.forEach(id => document.getElementById(id).addEventListener("input", refreshSwatch));
+
+    document.getElementById("applyBtn").addEventListener("click", async () => {
+      try {
+        const s = await post("/api/apply", readForm());
+        renderState(s);
+      } catch (e) {
+        alert(`应用失败: ${e.message}`);
+      }
+    });
+
+    document.getElementById("toggleBtn").addEventListener("click", async () => {
+      try {
+        const current = (await getState()).running;
+        const s = await post("/api/toggle", { running: current ? 0 : 1 });
+        renderState(s);
+      } catch (e) {
+        alert(`切换失败: ${e.message}`);
+      }
+    });
+
+    document.getElementById("loadBtn").addEventListener("click", async () => {
+      try {
+        const name = document.getElementById("profileSelect").value;
+        const s = await post("/api/profile/load", { name });
+        renderState(s);
+      } catch (e) {
+        alert(`加载失败: ${e.message}`);
+      }
+    });
+
+    document.getElementById("saveBtn").addEventListener("click", async () => {
+      try {
+        const name = document.getElementById("profileName").value.trim();
+        const s = await post("/api/profile/save", { ...readForm(), name });
+        renderState(s);
+      } catch (e) {
+        alert(`保存失败: ${e.message}`);
+      }
+    });
+
+    document.getElementById("newBtn").addEventListener("click", async () => {
+      try {
+        const name = document.getElementById("profileName").value.trim();
+        if (!name) return alert("请先输入配置名");
+        const s = await post("/api/profile/new", { ...readForm(), name });
+        renderState(s);
+      } catch (e) {
+        alert(`新建失败: ${e.message}`);
+      }
+    });
+
+    document.getElementById("renameBtn").addEventListener("click", async () => {
+      try {
+        const old_name = document.getElementById("profileSelect").value;
+        const new_name = document.getElementById("profileName").value.trim();
+        if (!new_name) return alert("请先输入新的配置名");
+        const s = await post("/api/profile/rename", { old_name, new_name });
+        renderState(s);
+      } catch (e) {
+        alert(`重命名失败: ${e.message}`);
+      }
+    });
+
+    document.getElementById("quitBtn").addEventListener("click", async () => {
+      if (!confirm("确认退出 MyCross 服务吗？")) return;
+      try {
+        await post("/api/quit", {});
+        alert("程序已退出");
+      } catch (e) {
+        alert(`退出失败: ${e.message}`);
+      }
+    });
+
+    document.getElementById("profileSelect").addEventListener("change", () => {
+      document.getElementById("profileName").value = document.getElementById("profileSelect").value;
+    });
+
+    refreshAll();
+    setInterval(refreshAll, 3000);
+  </script>
+</body>
+</html>
