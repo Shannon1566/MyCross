@@ -97,7 +97,7 @@ void stop_server(){if(g_listen!=INVALID_SOCKET){closesocket(g_listen);g_listen=I
 bool wait_server(int ms){DWORD st=GetTickCount();while((int)(GetTickCount()-st)<ms){SOCKET s=socket(AF_INET,SOCK_STREAM,IPPROTO_TCP);if(s==INVALID_SOCKET){Sleep(50);continue;}sockaddr_in a={};a.sin_family=AF_INET;a.sin_port=htons(PORT);inet_pton(AF_INET,"127.0.0.1",&a.sin_addr);int rc=connect(s,(sockaddr*)&a,sizeof(a));closesocket(s);if(rc==0)return true;Sleep(60);}return false;}
 
 std::wstring edge_path(){std::wstring p1=L"C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",p2=L"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe";if(GetFileAttributesW(p1.c_str())!=INVALID_FILE_ATTRIBUTES)return p1;if(GetFileAttributesW(p2.c_str())!=INVALID_FILE_ATTRIBUTES)return p2;return L"msedge.exe";}
-bool launch_ui(){g_launchErr=0;std::wstring exe=edge_path();std::wstring cmd=L"\""+exe+L"\" --app=http://127.0.0.1:5188/ --new-window --window-size=1280,740";STARTUPINFOW si={};si.cb=sizeof(si);ZeroMemory(&g_uiProc,sizeof(g_uiProc));if(!CreateProcessW(nullptr,cmd.data(),nullptr,nullptr,FALSE,0,nullptr,nullptr,&si,&g_uiProc)){g_launchErr=GetLastError();return false;}return true;}
+bool launch_ui(){g_launchErr=0;std::wstring exe=edge_path();std::wstring cmd=L"\""+exe+L"\" --app=http://127.0.0.1:5188/ --new-window --window-size=1120,700";STARTUPINFOW si={};si.cb=sizeof(si);ZeroMemory(&g_uiProc,sizeof(g_uiProc));if(!CreateProcessW(nullptr,cmd.data(),nullptr,nullptr,FALSE,0,nullptr,nullptr,&si,&g_uiProc)){g_launchErr=GetLastError();return false;}return true;}
 void stop_ui(){if(g_uiProc.hProcess){DWORD w=WaitForSingleObject(g_uiProc.hProcess,150);if(w==WAIT_TIMEOUT)TerminateProcess(g_uiProc.hProcess,0);CloseHandle(g_uiProc.hProcess);g_uiProc.hProcess=nullptr;}if(g_uiProc.hThread){CloseHandle(g_uiProc.hThread);g_uiProc.hThread=nullptr;}}
 
 void apply_cli(){int argc=0;LPWSTR*argv=CommandLineToArgvW(GetCommandLineW(),&argc);if(!argv)return;Config c;{std::lock_guard<std::mutex>lk(g_state.mu);c=g_state.cfg;}if(argc>=3){c.x=_wtoi(argv[1]);c.y=_wtoi(argv[2]);}for(int i=1;i<argc;++i){if(wcsncmp(argv[i],L"--x=",4)==0)c.x=_wtoi(argv[i]+4);else if(wcsncmp(argv[i],L"--y=",4)==0)c.y=_wtoi(argv[i]+4);}normalize(c);{std::lock_guard<std::mutex>lk(g_state.mu);g_state.cfg=c;}LocalFree(argv);} 
@@ -123,4 +123,5 @@ int WINAPI wWinMain(HINSTANCE hInst,HINSTANCE, PWSTR,int){
   stop_server();stop_ui();stop_overlay();
   return 0;
 }
+
 
