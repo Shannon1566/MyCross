@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <filesystem>
 #include <map>
 #include <mutex>
 #include <sstream>
@@ -54,6 +55,7 @@ HWND g_overlayWindow = nullptr;
 DWORD g_overlayThreadId = 0;
 std::thread g_overlayThread;
 SOCKET g_listenSocket = INVALID_SOCKET;
+PROCESS_INFORMATION g_webAppProcess = {};
 
 int ClampInt(int value, int minV, int maxV)
 {
@@ -955,6 +957,62 @@ void StopOverlayThread()
         g_overlayThread.join();
     }
 }
+
+std::wstring FindEdgeExecutable()
+{
+    const std::vector<std::wstring> candidates = {
+        L"C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+        L"C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
+    };
+
+    for (const auto& path : candidates) {
+        if (std::filesystem::exists(path)) {
+            return path;
+        }
+    }
+
+    return L"msedge.exe";
+}
+
+bool LaunchAppWindow()
+{
+    const std::wstring edgeExe = FindEdgeExecutable();
+    std::wstring cmd = L"\\\"" + edgeExe + L"\\\" --app=http://127.0.0.1:5188/ --new-window --window-size=1280,860";
+
+    STARTUPINFOW si = {};
+    si.cb = sizeof(si);
+    ZeroMemory(&g_webAppProcess, sizeof(g_webAppProcess));
+
+    BOOL ok = CreateProcessW(
+        nullptr,
+        cmd.data(),
+        nullptr,
+        nullptr,
+        FALSE,
+        0,
+        nullptr,
+        nullptr,
+        &si,
+        &g_webAppProcess);
+
+    return ok == TRUE;
+}
+
+void StopAppWindow()
+{
+    if (g_webAppProcess.hProcess != nullptr) {
+        const DWORD waitResult = WaitForSingleObject(g_webAppProcess.hProcess, 150);
+        if (waitResult == WAIT_TIMEOUT) {
+            TerminateProcess(g_webAppProcess.hProcess, 0);
+        }
+        CloseHandle(g_webAppProcess.hProcess);
+        g_webAppProcess.hProcess = nullptr;
+    }
+    if (g_webAppProcess.hThread != nullptr) {
+        CloseHandle(g_webAppProcess.hThread);
+        g_webAppProcess.hThread = nullptr;
+    }
+}
 }  // namespace
 
 int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
@@ -976,7 +1034,10 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
         return 1;
     }
 
-    ShellExecuteW(nullptr, L"open", L"http://127.0.0.1:5188/", nullptr, nullptr, SW_SHOWNORMAL);
+    if (!LaunchAppWindow()) {
+        MessageBoxW(nullptr, L"启动应用窗口失败，已回退到默认浏览器。", L"MyCross", MB_OK | MB_ICONWARNING);
+        ShellExecuteW(nullptr, L"open", L"http://127.0.0.1:5188/", nullptr, nullptr, SW_SHOWNORMAL);
+    }
 
     while (!g_exitRequested) {
         sockaddr_in clientAddr = {};
@@ -993,6 +1054,7 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
     }
 
     StopHttpServer();
+    StopAppWindow();
     StopOverlayThread();
     return 0;
 }
