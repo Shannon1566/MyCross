@@ -102,38 +102,42 @@
     function paintSwatch(){const r=Number($("color_r").value||0),g=Number($("color_g").value||0),b=Number($("color_b").value||0);$("swatch").style.background=`rgb(${r},${g},${b})`}
     function normName(n){n=(n||"").trim();if(!n)return"";return /\.ini$/i.test(n)?n:`${n}.ini`;}
 
-    function render(s){
+    let dirty = false;
+
+    function render(s, forceFill=false){
       const sel=$("profileSelect");
       const cur=s.active_profile||"";
       sel.innerHTML="";
       (s.profiles||[]).forEach(n=>{const op=document.createElement("option");op.value=n;op.textContent=n;if(n===cur)op.selected=true;sel.appendChild(op);});
-      $("profileName").value=cur;
-      fill(s.config);
+      if (forceFill || !dirty) {
+        $("profileName").value=cur;
+        fill(s.config);
+      }
       const on=!!s.running;
       $("dot").classList.toggle("on",on);
       $("st").textContent=on?"状态: 运行中":"状态: 已停止";
       $("toggleBtn").textContent=on?"停止准星":"启动准星";
     }
 
-    async function refresh(){try{render(await state())}catch(e){alert(`刷新失败: ${e.message}`)}}
+    async function refresh(){try{render(await state(), false)}catch(e){alert(`刷新失败: ${e.message}`)}}
 
-    keys.forEach(k=>$(k).addEventListener('input',paintSwatch));
+    keys.forEach(k=>$(k).addEventListener('input',()=>{dirty=true;paintSwatch();}));
 
-    $("applyBtn").onclick=async()=>{try{render(await post('/api/apply',formData()))}catch(e){alert(`应用失败: ${e.message}`)}};
-    $("toggleBtn").onclick=async()=>{try{const s=await state();render(await post('/api/toggle',{running:s.running?0:1}))}catch(e){alert(`切换失败: ${e.message}`)}};
-    $("loadBtn").onclick=async()=>{const n=$("profileSelect").value;if(!n)return;try{render(await post('/api/profile/load',{name:n}))}catch(e){alert(`加载失败: ${e.message}`)}};
-    $("saveBtn").onclick=async()=>{try{render(await post('/api/profile/save',{...formData(),name:$("profileName").value.trim()}))}catch(e){alert(`保存失败: ${e.message}`)}};
-    $("newBtn").onclick=async()=>{const n=$("profileName").value.trim();if(!n)return alert('请先输入配置名');try{render(await post('/api/profile/new',{...formData(),name:n}))}catch(e){alert(`新建失败: ${e.message}`)}};
-    $("renameBtn").onclick=async()=>{const oldn=$("profileSelect").value;const newn=$("profileName").value.trim();if(!oldn)return alert('请先选择配置');if(!newn)return alert('请先输入新配置名');if(oldn.toLowerCase()===normName(newn).toLowerCase())return alert('新旧配置名相同');try{render(await post('/api/profile/rename',{old_name:oldn,new_name:newn}))}catch(e){alert(`重命名失败: ${e.message}`)}};
+    $("applyBtn").onclick=async()=>{try{const s=await post('/api/apply',formData());dirty=false;render(s,true)}catch(e){alert(`应用失败: ${e.message}`)}};
+    $("toggleBtn").onclick=async()=>{try{const s=await state();render(await post('/api/toggle',{running:s.running?0:1}),false)}catch(e){alert(`切换失败: ${e.message}`)}};
+    $("loadBtn").onclick=async()=>{const n=$("profileSelect").value;if(!n)return;try{const s=await post('/api/profile/load',{name:n});dirty=false;render(s,true)}catch(e){alert(`加载失败: ${e.message}`)}};
+    $("saveBtn").onclick=async()=>{try{const s=await post('/api/profile/save',{...formData(),name:$("profileName").value.trim()});dirty=false;render(s,true)}catch(e){alert(`保存失败: ${e.message}`)}};
+    $("newBtn").onclick=async()=>{const n=$("profileName").value.trim();if(!n)return alert('请先输入配置名');try{const s=await post('/api/profile/new',{...formData(),name:n});dirty=false;render(s,true)}catch(e){alert(`新建失败: ${e.message}`)}};
+    $("renameBtn").onclick=async()=>{const oldn=$("profileSelect").value;const newn=$("profileName").value.trim();if(!oldn)return alert('请先选择配置');if(!newn)return alert('请先输入新配置名');if(oldn.toLowerCase()===normName(newn).toLowerCase())return alert('新旧配置名相同');try{const s=await post('/api/profile/rename',{old_name:oldn,new_name:newn});dirty=false;render(s,true)}catch(e){alert(`重命名失败: ${e.message}`)}};
     $("quitBtn").onclick=async()=>{if(!confirm('确认退出程序？'))return;try{await post('/api/quit',{});window.close()}catch(e){alert(`退出失败: ${e.message}`)}};
 
     $("profileSelect").addEventListener('change',async()=>{
       const n=$("profileSelect").value;$("profileName").value=n;if(!n)return;
-      try{render(await post('/api/profile/load',{name:n}))}catch(e){alert(`自动加载失败: ${e.message}`)}
+      try{const s=await post('/api/profile/load',{name:n});dirty=false;render(s,true)}catch(e){alert(`自动加载失败: ${e.message}`)}
     });
 
     async function ping(){try{await post('/api/ping',{})}catch(_){}}
-    setInterval(refresh,3000);
+    // Avoid periodic refresh from overwriting in-progress edits.
     setInterval(ping,1000);
     window.addEventListener('beforeunload',()=>{navigator.sendBeacon('/api/quit','')});
 
