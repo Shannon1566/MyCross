@@ -55,9 +55,9 @@
         <div class="row"><label>已存在配置</label><select id="profileSelect"></select></div>
         <div class="row"><label>配置名</label><input id="profileName" placeholder="例如: sniper.ini" /></div>
         <div class="row3">
-          <button class="btn" id="loadBtn">加载</button>
           <button class="btn" id="newBtn">新建</button>
           <button class="btn" id="renameBtn">重命名</button>
+          <div></div>
         </div>
         <div class="row3" style="margin-top:8px;">
           <button class="pri" id="saveBtn">保存当前配置</button>
@@ -125,7 +125,6 @@
     });
 
     $("toggleBtn").onclick=async()=>{try{const s=await state();render(await post('/api/toggle',{running:s.running?0:1}),false)}catch(e){alert(`切换失败: ${e.message}`)}};
-    $("loadBtn").onclick=async()=>{const n=$("profileSelect").value;if(!n)return;try{const s=await post('/api/profile/load',{name:n});dirty=false;render(s,true)}catch(e){alert(`加载失败: ${e.message}`)}};
     $("saveBtn").onclick=async()=>{try{const s=await post('/api/profile/save',{...formData(),name:$("profileName").value.trim()});dirty=false;render(s,true)}catch(e){alert(`保存失败: ${e.message}`)}};
     $("newBtn").onclick=async()=>{const n=$("profileName").value.trim();if(!n)return alert('请先输入配置名');try{const s=await post('/api/profile/new',{...formData(),name:n});dirty=false;render(s,true)}catch(e){alert(`新建失败: ${e.message}`)}};
     $("renameBtn").onclick=async()=>{const oldn=$("profileSelect").value;const newn=$("profileName").value.trim();if(!oldn)return alert('请先选择配置');if(!newn)return alert('请先输入新配置名');if(oldn.toLowerCase()===normName(newn).toLowerCase())return alert('新旧配置名相同');try{const s=await post('/api/profile/rename',{old_name:oldn,new_name:newn});dirty=false;render(s,true)}catch(e){alert(`重命名失败: ${e.message}`)}};
