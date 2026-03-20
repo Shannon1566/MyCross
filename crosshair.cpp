@@ -1,146 +1,134 @@
-﻿#include <windows.h>
+﻿#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <windows.h>
+#include <shellapi.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstdio>
 #include <cstdlib>
+#include <fstream>
+#include <map>
+#include <mutex>
+#include <sstream>
 #include <string>
+#include <thread>
 #include <vector>
-#include <cwctype>
 
 namespace {
-constexpr wchar_t kMainWindowClass[] = L"MyCrossMainWindow";
-constexpr wchar_t kOverlayWindowClass[] = L"MyCrossOverlayWindow";
+constexpr wchar_t kOverlayClassName[] = L"MyCrossOverlayWindow";
+constexpr wchar_t kControlClassName[] = L"MyCrossControlWindow";
 
-constexpr int kDefaultWindowSize = 40;
-constexpr int kDefaultCrossHalf = 10;
-constexpr int kDefaultLineWidth = 2;
-constexpr int kDefaultColorR = 0;
-constexpr int kDefaultColorG = 255;
-constexpr int kDefaultColorB = 0;
-
-constexpr int kMainWindowWidth = 700;
-constexpr int kMainWindowHeight = 560;
-
+constexpr UINT WM_APP_APPLY = WM_APP + 1;
 constexpr int kHotkeyId = 1;
 constexpr UINT kQuitHotkeyModifiers = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
 constexpr UINT kQuitHotkeyVirtualKey = VK_F12;
 
-constexpr int IDC_PROFILE_COMBO = 1001;
-constexpr int IDC_BUTTON_REFRESH = 1002;
-constexpr int IDC_BUTTON_NEW = 1003;
-constexpr int IDC_BUTTON_SAVE = 1004;
-constexpr int IDC_BUTTON_TOGGLE = 1005;
-constexpr int IDC_COLOR_SWATCH = 1006;
-constexpr int IDC_STATUS_LABEL = 1007;
-constexpr int IDC_EDIT_PROFILE_NAME = 1008;
-constexpr int IDC_BUTTON_RENAME = 1009;
-
-constexpr int IDC_EDIT_X = 1101;
-constexpr int IDC_EDIT_Y = 1102;
-constexpr int IDC_EDIT_WINDOW_SIZE = 1103;
-constexpr int IDC_EDIT_CROSS_HALF = 1104;
-constexpr int IDC_EDIT_LINE_WIDTH = 1105;
-constexpr int IDC_EDIT_R = 1106;
-constexpr int IDC_EDIT_G = 1107;
-constexpr int IDC_EDIT_B = 1108;
+constexpr int kServerPort = 5188;
 
 struct CrosshairConfig {
     int x = -1;
     int y = -1;
-    int windowSize = kDefaultWindowSize;
-    int crossHalf = kDefaultCrossHalf;
-    int lineWidth = kDefaultLineWidth;
-    int colorR = kDefaultColorR;
-    int colorG = kDefaultColorG;
-    int colorB = kDefaultColorB;
+    int windowSize = 40;
+    int crossHalf = 10;
+    int lineWidth = 2;
+    int colorR = 0;
+    int colorG = 255;
+    int colorB = 0;
 };
 
-HINSTANCE g_instance = nullptr;
-HWND g_mainWindow = nullptr;
-HWND g_overlayWindow = nullptr;
-HWND g_profileCombo = nullptr;
-HWND g_toggleButton = nullptr;
-HWND g_buttonRefresh = nullptr;
-HWND g_buttonNew = nullptr;
-HWND g_buttonSave = nullptr;
-HWND g_buttonRename = nullptr;
-HWND g_statusLabel = nullptr;
-HWND g_colorSwatch = nullptr;
-HWND g_editProfileName = nullptr;
-HWND g_editX = nullptr;
-HWND g_editY = nullptr;
-HWND g_editWindowSize = nullptr;
-HWND g_editCrossHalf = nullptr;
-HWND g_editLineWidth = nullptr;
-HWND g_editR = nullptr;
-HWND g_editG = nullptr;
-HWND g_editB = nullptr;
+std::mutex g_stateMutex;
+CrosshairConfig g_config;
+bool g_overlayRunning = false;
+std::wstring g_activeProfile = L"default.ini";
 
 std::wstring g_exeDir;
 std::wstring g_configDir;
-std::wstring g_activeProfileName;
-bool g_overlayRunning = false;
-CrosshairConfig g_currentConfig;
-HFONT g_fontRegular = nullptr;
-HFONT g_fontTitle = nullptr;
-HFONT g_fontSection = nullptr;
-HBRUSH g_swatchBrush = nullptr;
-HBRUSH g_mainBgBrush = nullptr;
-HBRUSH g_cardBrush = nullptr;
+std::wstring g_webDir;
 
-int ParseIntText(const wchar_t* text, int fallback)
+std::atomic<bool> g_exitRequested{false};
+
+HINSTANCE g_instance = nullptr;
+HWND g_controlWindow = nullptr;
+HWND g_overlayWindow = nullptr;
+DWORD g_overlayThreadId = 0;
+std::thread g_overlayThread;
+SOCKET g_listenSocket = INVALID_SOCKET;
+
+int ClampInt(int value, int minV, int maxV)
 {
-    if (text == nullptr || *text == L'\0') {
-        return fallback;
-    }
-
-    wchar_t* end = nullptr;
-    const long value = wcstol(text, &end, 10);
-    if (end == text || *end != L'\0') {
-        return fallback;
-    }
-
-    return static_cast<int>(value);
+    return std::max(minV, std::min(maxV, value));
 }
 
-std::wstring IntToWString(int value)
+void NormalizeConfig(CrosshairConfig& c)
 {
-    wchar_t buffer[32] = {};
-    swprintf(buffer, 32, L"%d", value);
-    return buffer;
+    c.windowSize = ClampInt(c.windowSize, 20, 800);
+    c.lineWidth = ClampInt(c.lineWidth, 1, 20);
+    c.crossHalf = ClampInt(c.crossHalf, 1, std::max(1, c.windowSize / 2));
+    c.colorR = ClampInt(c.colorR, 0, 255);
+    c.colorG = ClampInt(c.colorG, 0, 255);
+    c.colorB = ClampInt(c.colorB, 0, 255);
+    if (c.x < -1) c.x = -1;
+    if (c.y < -1) c.y = -1;
+}
+
+int ParseInt(const std::string& text, int fallback)
+{
+    if (text.empty()) {
+        return fallback;
+    }
+
+    char* end = nullptr;
+    const long value = strtol(text.c_str(), &end, 10);
+    if (end == text.c_str() || *end != '\0') {
+        return fallback;
+    }
+    return static_cast<int>(value);
 }
 
 std::wstring GetExeDir()
 {
     wchar_t path[MAX_PATH] = {};
     GetModuleFileNameW(nullptr, path, MAX_PATH);
-
-    std::wstring fullPath(path);
-    const size_t split = fullPath.find_last_of(L"\\/");
-    if (split == std::wstring::npos) {
+    std::wstring full(path);
+    const size_t pos = full.find_last_of(L"\\/");
+    if (pos == std::wstring::npos) {
         return L".";
     }
-
-    return fullPath.substr(0, split);
+    return full.substr(0, pos);
 }
 
-std::wstring BuildProfilePath(const std::wstring& profileName)
+std::wstring Utf8ToWide(const std::string& s)
 {
-    return g_configDir + L"\\" + profileName;
+    if (s.empty()) return L"";
+    const int n = MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, nullptr, 0);
+    if (n <= 0) return L"";
+    std::wstring out(static_cast<size_t>(n - 1), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, s.c_str(), -1, out.data(), n);
+    return out;
+}
+
+std::string WideToUtf8(const std::wstring& s)
+{
+    if (s.empty()) return "";
+    const int n = WideCharToMultiByte(CP_UTF8, 0, s.c_str(), -1, nullptr, 0, nullptr, nullptr);
+    if (n <= 0) return "";
+    std::string out(static_cast<size_t>(n - 1), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, s.c_str(), -1, out.data(), n, nullptr, nullptr);
+    return out;
+}
+
+std::wstring BuildProfilePath(const std::wstring& name)
+{
+    return g_configDir + L"\\" + name;
 }
 
 std::wstring Trim(const std::wstring& text)
 {
     size_t left = 0;
-    while (left < text.size() && iswspace(text[left])) {
-        ++left;
-    }
-
+    while (left < text.size() && iswspace(text[left])) ++left;
     size_t right = text.size();
-    while (right > left && iswspace(text[right - 1])) {
-        --right;
-    }
-
+    while (right > left && iswspace(text[right - 1])) --right;
     return text.substr(left, right - left);
 }
 
@@ -149,7 +137,7 @@ std::wstring NormalizeProfileName(std::wstring name)
     name = Trim(name);
     for (auto& ch : name) {
         if (ch == L'\\' || ch == L'/' || ch == L':' || ch == L'*' || ch == L'?' ||
-            ch == L'\"' || ch == L'<' || ch == L'>' || ch == L'|') {
+            ch == L'"' || ch == L'<' || ch == L'>' || ch == L'|') {
             ch = L'_';
         }
     }
@@ -166,703 +154,179 @@ std::wstring NormalizeProfileName(std::wstring name)
     return name;
 }
 
-void SetProfileNameInput(const std::wstring& profileName)
-{
-    if (g_editProfileName != nullptr) {
-        SetWindowTextW(g_editProfileName, profileName.c_str());
-    }
-}
-
-std::wstring GetProfileNameInput()
-{
-    if (g_editProfileName == nullptr) {
-        return L"";
-    }
-
-    wchar_t text[260] = {};
-    GetWindowTextW(g_editProfileName, text, 260);
-    return NormalizeProfileName(text);
-}
-
-void CreateUiFonts()
-{
-    if (g_fontRegular == nullptr) {
-        g_fontRegular = CreateFontW(
-            -18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-            DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-    }
-
-    if (g_fontTitle == nullptr) {
-        g_fontTitle = CreateFontW(
-            -30, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-            DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-    }
-
-    if (g_fontSection == nullptr) {
-        g_fontSection = CreateFontW(
-            -20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY,
-            DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
-    }
-
-    if (g_mainBgBrush == nullptr) {
-        g_mainBgBrush = CreateSolidBrush(RGB(241, 244, 249));
-    }
-
-    if (g_cardBrush == nullptr) {
-        g_cardBrush = CreateSolidBrush(RGB(255, 255, 255));
-    }
-}
-
-void DestroyUiResources()
-{
-    if (g_swatchBrush != nullptr) {
-        DeleteObject(g_swatchBrush);
-        g_swatchBrush = nullptr;
-    }
-    if (g_fontRegular != nullptr) {
-        DeleteObject(g_fontRegular);
-        g_fontRegular = nullptr;
-    }
-    if (g_fontTitle != nullptr) {
-        DeleteObject(g_fontTitle);
-        g_fontTitle = nullptr;
-    }
-    if (g_fontSection != nullptr) {
-        DeleteObject(g_fontSection);
-        g_fontSection = nullptr;
-    }
-    if (g_mainBgBrush != nullptr) {
-        DeleteObject(g_mainBgBrush);
-        g_mainBgBrush = nullptr;
-    }
-    if (g_cardBrush != nullptr) {
-        DeleteObject(g_cardBrush);
-        g_cardBrush = nullptr;
-    }
-}
-
 std::vector<std::wstring> EnumerateProfiles()
 {
-    std::vector<std::wstring> files;
+    std::vector<std::wstring> profiles;
     const std::wstring pattern = g_configDir + L"\\*.ini";
 
-    WIN32_FIND_DATAW findData = {};
-    HANDLE handle = FindFirstFileW(pattern.c_str(), &findData);
-    if (handle == INVALID_HANDLE_VALUE) {
-        return files;
+    WIN32_FIND_DATAW data = {};
+    HANDLE h = FindFirstFileW(pattern.c_str(), &data);
+    if (h == INVALID_HANDLE_VALUE) {
+        return profiles;
     }
 
     do {
-        if ((findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
-            files.emplace_back(findData.cFileName);
+        if ((data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) == 0) {
+            profiles.emplace_back(data.cFileName);
         }
-    } while (FindNextFileW(handle, &findData));
+    } while (FindNextFileW(h, &data));
 
-    FindClose(handle);
-    std::sort(files.begin(), files.end());
-    return files;
+    FindClose(h);
+    std::sort(profiles.begin(), profiles.end());
+    return profiles;
 }
 
-int ClampInt(int value, int minValue, int maxValue)
+CrosshairConfig LoadConfigFromFile(const std::wstring& path)
 {
-    return std::max(minValue, std::min(maxValue, value));
+    CrosshairConfig c;
+    c.x = GetPrivateProfileIntW(L"Crosshair", L"x", c.x, path.c_str());
+    c.y = GetPrivateProfileIntW(L"Crosshair", L"y", c.y, path.c_str());
+    c.windowSize = GetPrivateProfileIntW(L"Crosshair", L"window_size", c.windowSize, path.c_str());
+    c.crossHalf = GetPrivateProfileIntW(L"Crosshair", L"cross_half", c.crossHalf, path.c_str());
+    c.lineWidth = GetPrivateProfileIntW(L"Crosshair", L"line_width", c.lineWidth, path.c_str());
+    c.colorR = GetPrivateProfileIntW(L"Crosshair", L"color_r", c.colorR, path.c_str());
+    c.colorG = GetPrivateProfileIntW(L"Crosshair", L"color_g", c.colorG, path.c_str());
+    c.colorB = GetPrivateProfileIntW(L"Crosshair", L"color_b", c.colorB, path.c_str());
+    NormalizeConfig(c);
+    return c;
 }
 
-void NormalizeConfig(CrosshairConfig& config)
+std::wstring IntToWString(int v)
 {
-    config.windowSize = ClampInt(config.windowSize, 20, 800);
-    config.lineWidth = ClampInt(config.lineWidth, 1, 20);
-    config.crossHalf = ClampInt(config.crossHalf, 1, config.windowSize / 2);
-
-    config.colorR = ClampInt(config.colorR, 0, 255);
-    config.colorG = ClampInt(config.colorG, 0, 255);
-    config.colorB = ClampInt(config.colorB, 0, 255);
-
-    if (config.x < -1) config.x = -1;
-    if (config.y < -1) config.y = -1;
+    wchar_t buf[32] = {};
+    swprintf(buf, 32, L"%d", v);
+    return buf;
 }
 
-CrosshairConfig DefaultConfig()
+bool SaveConfigToFile(const std::wstring& path, CrosshairConfig c)
 {
-    CrosshairConfig config;
-    NormalizeConfig(config);
-    return config;
+    NormalizeConfig(c);
+    const BOOL ok1 = WritePrivateProfileStringW(L"Crosshair", L"x", IntToWString(c.x).c_str(), path.c_str());
+    const BOOL ok2 = WritePrivateProfileStringW(L"Crosshair", L"y", IntToWString(c.y).c_str(), path.c_str());
+    const BOOL ok3 = WritePrivateProfileStringW(L"Crosshair", L"window_size", IntToWString(c.windowSize).c_str(), path.c_str());
+    const BOOL ok4 = WritePrivateProfileStringW(L"Crosshair", L"cross_half", IntToWString(c.crossHalf).c_str(), path.c_str());
+    const BOOL ok5 = WritePrivateProfileStringW(L"Crosshair", L"line_width", IntToWString(c.lineWidth).c_str(), path.c_str());
+    const BOOL ok6 = WritePrivateProfileStringW(L"Crosshair", L"color_r", IntToWString(c.colorR).c_str(), path.c_str());
+    const BOOL ok7 = WritePrivateProfileStringW(L"Crosshair", L"color_g", IntToWString(c.colorG).c_str(), path.c_str());
+    const BOOL ok8 = WritePrivateProfileStringW(L"Crosshair", L"color_b", IntToWString(c.colorB).c_str(), path.c_str());
+    return ok1 && ok2 && ok3 && ok4 && ok5 && ok6 && ok7 && ok8;
 }
 
-CrosshairConfig LoadConfigFromFile(const std::wstring& profilePath)
+void EnsureConfigDirectory()
 {
-    CrosshairConfig config = DefaultConfig();
-
-    config.x = GetPrivateProfileIntW(L"Crosshair", L"x", config.x, profilePath.c_str());
-    config.y = GetPrivateProfileIntW(L"Crosshair", L"y", config.y, profilePath.c_str());
-    config.windowSize = GetPrivateProfileIntW(L"Crosshair", L"window_size", config.windowSize, profilePath.c_str());
-    config.crossHalf = GetPrivateProfileIntW(L"Crosshair", L"cross_half", config.crossHalf, profilePath.c_str());
-    config.lineWidth = GetPrivateProfileIntW(L"Crosshair", L"line_width", config.lineWidth, profilePath.c_str());
-    config.colorR = GetPrivateProfileIntW(L"Crosshair", L"color_r", config.colorR, profilePath.c_str());
-    config.colorG = GetPrivateProfileIntW(L"Crosshair", L"color_g", config.colorG, profilePath.c_str());
-    config.colorB = GetPrivateProfileIntW(L"Crosshair", L"color_b", config.colorB, profilePath.c_str());
-
-    NormalizeConfig(config);
-    return config;
-}
-
-bool SaveConfigToFile(const std::wstring& profilePath, CrosshairConfig config)
-{
-    NormalizeConfig(config);
-
-    const BOOL okX = WritePrivateProfileStringW(L"Crosshair", L"x", IntToWString(config.x).c_str(), profilePath.c_str());
-    const BOOL okY = WritePrivateProfileStringW(L"Crosshair", L"y", IntToWString(config.y).c_str(), profilePath.c_str());
-    const BOOL okWindow = WritePrivateProfileStringW(L"Crosshair", L"window_size", IntToWString(config.windowSize).c_str(), profilePath.c_str());
-    const BOOL okHalf = WritePrivateProfileStringW(L"Crosshair", L"cross_half", IntToWString(config.crossHalf).c_str(), profilePath.c_str());
-    const BOOL okLine = WritePrivateProfileStringW(L"Crosshair", L"line_width", IntToWString(config.lineWidth).c_str(), profilePath.c_str());
-    const BOOL okR = WritePrivateProfileStringW(L"Crosshair", L"color_r", IntToWString(config.colorR).c_str(), profilePath.c_str());
-    const BOOL okG = WritePrivateProfileStringW(L"Crosshair", L"color_g", IntToWString(config.colorG).c_str(), profilePath.c_str());
-    const BOOL okB = WritePrivateProfileStringW(L"Crosshair", L"color_b", IntToWString(config.colorB).c_str(), profilePath.c_str());
-
-    return okX && okY && okWindow && okHalf && okLine && okR && okG && okB;
-}
-
-void SetEditValue(HWND edit, int value)
-{
-    SetWindowTextW(edit, IntToWString(value).c_str());
-}
-
-void SetControlFont(HWND control, HFONT font)
-{
-    if (control != nullptr && font != nullptr) {
-        SendMessageW(control, WM_SETFONT, reinterpret_cast<WPARAM>(font), TRUE);
+    CreateDirectoryW(g_configDir.c_str(), nullptr);
+    const auto profiles = EnumerateProfiles();
+    if (profiles.empty()) {
+        SaveConfigToFile(BuildProfilePath(L"default.ini"), CrosshairConfig{});
     }
 }
 
-int ReadEditValue(HWND edit, int fallback)
+std::string JsonEscape(const std::string& input)
 {
-    wchar_t text[64] = {};
-    GetWindowTextW(edit, text, 64);
-    return ParseIntText(text, fallback);
-}
-
-void UpdateColorSwatch(const CrosshairConfig& config)
-{
-    if (g_swatchBrush != nullptr) {
-        DeleteObject(g_swatchBrush);
-        g_swatchBrush = nullptr;
+    std::string out;
+    out.reserve(input.size() + 8);
+    for (char ch : input) {
+        switch (ch) {
+        case '\\': out += "\\\\"; break;
+        case '"': out += "\\\""; break;
+        case '\n': out += "\\n"; break;
+        case '\r': out += "\\r"; break;
+        case '\t': out += "\\t"; break;
+        default: out += ch; break;
+        }
     }
-
-    g_swatchBrush = CreateSolidBrush(RGB(config.colorR, config.colorG, config.colorB));
-    if (g_colorSwatch != nullptr) {
-        InvalidateRect(g_colorSwatch, nullptr, TRUE);
-    }
+    return out;
 }
 
-void FillUiFromConfig(const CrosshairConfig& config)
-{
-    SetEditValue(g_editX, config.x);
-    SetEditValue(g_editY, config.y);
-    SetEditValue(g_editWindowSize, config.windowSize);
-    SetEditValue(g_editCrossHalf, config.crossHalf);
-    SetEditValue(g_editLineWidth, config.lineWidth);
-    SetEditValue(g_editR, config.colorR);
-    SetEditValue(g_editG, config.colorG);
-    SetEditValue(g_editB, config.colorB);
-    UpdateColorSwatch(config);
-}
-
-CrosshairConfig ReadConfigFromUi()
-{
-    CrosshairConfig config = g_currentConfig;
-
-    config.x = ReadEditValue(g_editX, config.x);
-    config.y = ReadEditValue(g_editY, config.y);
-    config.windowSize = ReadEditValue(g_editWindowSize, config.windowSize);
-    config.crossHalf = ReadEditValue(g_editCrossHalf, config.crossHalf);
-    config.lineWidth = ReadEditValue(g_editLineWidth, config.lineWidth);
-    config.colorR = ReadEditValue(g_editR, config.colorR);
-    config.colorG = ReadEditValue(g_editG, config.colorG);
-    config.colorB = ReadEditValue(g_editB, config.colorB);
-
-    NormalizeConfig(config);
-    return config;
-}
-
-void UpdateToggleButtonText()
-{
-    SetWindowTextW(g_toggleButton, g_overlayRunning ? L"停止准星叠加" : L"启动准星叠加");
-    if (g_statusLabel != nullptr) {
-        SetWindowTextW(g_statusLabel, g_overlayRunning ? L"状态: 运行中" : L"状态: 已停止");
-        InvalidateRect(g_statusLabel, nullptr, TRUE);
-        UpdateWindow(g_statusLabel);
-    }
-}
-
-RECT ComputeOverlayRect(const CrosshairConfig& config)
+RECT ComputeOverlayRect(const CrosshairConfig& c)
 {
     const int screenW = GetSystemMetrics(SM_CXSCREEN);
     const int screenH = GetSystemMetrics(SM_CYSCREEN);
 
-    int centerX = config.x;
-    int centerY = config.y;
-
+    int centerX = c.x;
+    int centerY = c.y;
     if (centerX < 0) centerX = screenW / 2;
     if (centerY < 0) centerY = screenH / 2;
 
     centerX = ClampInt(centerX, 0, screenW - 1);
     centerY = ClampInt(centerY, 0, screenH - 1);
 
-    RECT rect = {};
-    rect.left = centerX - config.windowSize / 2;
-    rect.top = centerY - config.windowSize / 2;
-    rect.right = rect.left + config.windowSize;
-    rect.bottom = rect.top + config.windowSize;
-    return rect;
+    RECT r = {};
+    r.left = centerX - c.windowSize / 2;
+    r.top = centerY - c.windowSize / 2;
+    r.right = r.left + c.windowSize;
+    r.bottom = r.top + c.windowSize;
+    return r;
 }
 
-void ApplyOverlayLayout()
+void ApplyOverlayFromState()
 {
-    if (g_overlayWindow == nullptr) {
-        return;
+    CrosshairConfig c;
+    bool running = false;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        c = g_config;
+        running = g_overlayRunning;
     }
 
-    RECT rect = ComputeOverlayRect(g_currentConfig);
-    MoveWindow(
-        g_overlayWindow,
-        rect.left,
-        rect.top,
-        rect.right - rect.left,
-        rect.bottom - rect.top,
-        TRUE);
-    InvalidateRect(g_overlayWindow, nullptr, TRUE);
-}
-
-void StopOverlay()
-{
-    if (g_overlayWindow != nullptr) {
-        DestroyWindow(g_overlayWindow);
-        g_overlayWindow = nullptr;
-    }
-
-    g_overlayRunning = false;
-    UpdateToggleButtonText();
-}
-
-bool StartOverlay()
-{
-    g_currentConfig = ReadConfigFromUi();
-
-    RECT rect = ComputeOverlayRect(g_currentConfig);
-    g_overlayWindow = CreateWindowExW(
-        WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
-        kOverlayWindowClass,
-        L"",
-        WS_POPUP,
-        rect.left,
-        rect.top,
-        rect.right - rect.left,
-        rect.bottom - rect.top,
-        nullptr,
-        nullptr,
-        g_instance,
-        nullptr);
-
-    if (g_overlayWindow == nullptr) {
-        MessageBoxW(g_mainWindow, L"创建准星窗口失败。", L"MyCross", MB_OK | MB_ICONERROR);
-        return false;
-    }
-
-    SetLayeredWindowAttributes(g_overlayWindow, RGB(0, 0, 0), 0, LWA_COLORKEY);
-    ShowWindow(g_overlayWindow, SW_SHOW);
-
-    g_overlayRunning = true;
-    UpdateToggleButtonText();
-    return true;
-}
-
-void ToggleOverlay()
-{
-    if (g_overlayRunning) {
-        StopOverlay();
-    } else {
-        StartOverlay();
-    }
-}
-
-void ApplyConfigToOverlayIfRunning()
-{
-    g_currentConfig = ReadConfigFromUi();
-    UpdateColorSwatch(g_currentConfig);
-
-    if (!g_overlayRunning) {
-        return;
-    }
-
-    ApplyOverlayLayout();
-}
-
-std::wstring GenerateNextProfileName()
-{
-    const std::vector<std::wstring> profiles = EnumerateProfiles();
-
-    for (int i = 1; i < 10000; ++i) {
-        wchar_t name[64] = {};
-        swprintf(name, 64, L"profile_%03d.ini", i);
-
-        const bool exists = std::find(profiles.begin(), profiles.end(), name) != profiles.end();
-        if (!exists) {
-            return name;
+    if (!running) {
+        if (g_overlayWindow != nullptr) {
+            DestroyWindow(g_overlayWindow);
+            g_overlayWindow = nullptr;
         }
-    }
-
-    return L"profile_custom.ini";
-}
-
-bool SelectProfileInComboByName(const std::wstring& profileName)
-{
-    const int count = static_cast<int>(SendMessageW(g_profileCombo, CB_GETCOUNT, 0, 0));
-    for (int i = 0; i < count; ++i) {
-        wchar_t item[260] = {};
-        SendMessageW(g_profileCombo, CB_GETLBTEXT, i, reinterpret_cast<LPARAM>(item));
-        if (profileName == item) {
-            SendMessageW(g_profileCombo, CB_SETCURSEL, i, 0);
-            return true;
-        }
-    }
-
-    return false;
-}
-
-std::wstring GetSelectedProfileName()
-{
-    wchar_t name[260] = {};
-    const int selected = static_cast<int>(SendMessageW(g_profileCombo, CB_GETCURSEL, 0, 0));
-    if (selected == CB_ERR) {
-        return L"";
-    }
-
-    SendMessageW(g_profileCombo, CB_GETLBTEXT, selected, reinterpret_cast<LPARAM>(name));
-    return name;
-}
-
-void LoadSelectedProfileToUi()
-{
-    const std::wstring profileName = GetSelectedProfileName();
-    if (profileName.empty()) {
         return;
     }
 
-    const std::wstring profilePath = BuildProfilePath(profileName);
-    g_currentConfig = LoadConfigFromFile(profilePath);
-    g_activeProfileName = profileName;
-    SetProfileNameInput(profileName);
-    FillUiFromConfig(g_currentConfig);
-    ApplyConfigToOverlayIfRunning();
-}
-
-void RefreshProfileList(const std::wstring& preferred = L"")
-{
-    const std::vector<std::wstring> profiles = EnumerateProfiles();
-
-    SendMessageW(g_profileCombo, CB_RESETCONTENT, 0, 0);
-    for (const auto& profile : profiles) {
-        SendMessageW(g_profileCombo, CB_ADDSTRING, 0, reinterpret_cast<LPARAM>(profile.c_str()));
-    }
-
-    if (!preferred.empty() && SelectProfileInComboByName(preferred)) {
-        LoadSelectedProfileToUi();
-        return;
-    }
-
-    if (!g_activeProfileName.empty() && SelectProfileInComboByName(g_activeProfileName)) {
-        LoadSelectedProfileToUi();
-        return;
-    }
-
-    if (!profiles.empty()) {
-        SendMessageW(g_profileCombo, CB_SETCURSEL, 0, 0);
-        LoadSelectedProfileToUi();
-    }
-}
-
-void EnsureConfigFolderAndDefaultProfile()
-{
-    CreateDirectoryW(g_configDir.c_str(), nullptr);
-
-    std::vector<std::wstring> profiles = EnumerateProfiles();
-    if (profiles.empty()) {
-        const std::wstring defaultProfile = BuildProfilePath(L"default.ini");
-        SaveConfigToFile(defaultProfile, DefaultConfig());
-    }
-}
-
-void SaveCurrentProfile()
-{
-    std::wstring targetName = g_activeProfileName;
-    const std::wstring inputName = GetProfileNameInput();
-
-    if (!inputName.empty()) {
-        targetName = inputName;
-    }
-
-    if (targetName.empty()) {
-        MessageBoxW(g_mainWindow, L"请输入配置名或先选择一个配置文件。", L"MyCross", MB_OK | MB_ICONWARNING);
-        return;
-    }
-
-    g_currentConfig = ReadConfigFromUi();
-    const std::wstring path = BuildProfilePath(targetName);
-
-    if (!SaveConfigToFile(path, g_currentConfig)) {
-        MessageBoxW(g_mainWindow, L"保存配置失败。", L"MyCross", MB_OK | MB_ICONERROR);
-        return;
-    }
-
-    g_activeProfileName = targetName;
-    RefreshProfileList(g_activeProfileName);
-    ApplyConfigToOverlayIfRunning();
-    MessageBoxW(g_mainWindow, L"配置已保存。", L"MyCross", MB_OK | MB_ICONINFORMATION);
-}
-
-void CreateNewProfileFromCurrent()
-{
-    g_currentConfig = ReadConfigFromUi();
-
-    std::wstring profileName = GetProfileNameInput();
-    if (profileName.empty()) {
-        profileName = GenerateNextProfileName();
-    }
-    const std::wstring profilePath = BuildProfilePath(profileName);
-
-    if (GetFileAttributesW(profilePath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        const int answer = MessageBoxW(
-            g_mainWindow,
-            L"同名配置已存在，是否覆盖？",
-            L"MyCross",
-            MB_YESNO | MB_ICONQUESTION);
-        if (answer != IDYES) {
+    const RECT r = ComputeOverlayRect(c);
+    if (g_overlayWindow == nullptr) {
+        g_overlayWindow = CreateWindowExW(
+            WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
+            kOverlayClassName,
+            L"",
+            WS_POPUP,
+            r.left,
+            r.top,
+            r.right - r.left,
+            r.bottom - r.top,
+            nullptr,
+            nullptr,
+            g_instance,
+            nullptr);
+        if (g_overlayWindow == nullptr) {
             return;
         }
+        SetLayeredWindowAttributes(g_overlayWindow, RGB(0, 0, 0), 0, LWA_COLORKEY);
+        ShowWindow(g_overlayWindow, SW_SHOW);
+    } else {
+        MoveWindow(g_overlayWindow, r.left, r.top, r.right - r.left, r.bottom - r.top, TRUE);
     }
 
-    if (!SaveConfigToFile(profilePath, g_currentConfig)) {
-        MessageBoxW(g_mainWindow, L"新建配置失败。", L"MyCross", MB_OK | MB_ICONERROR);
-        return;
-    }
-
-    g_activeProfileName = profileName;
-    RefreshProfileList(profileName);
-    MessageBoxW(g_mainWindow, L"已基于当前参数创建新配置。", L"MyCross", MB_OK | MB_ICONINFORMATION);
-}
-
-void RenameCurrentProfile()
-{
-    if (g_activeProfileName.empty()) {
-        MessageBoxW(g_mainWindow, L"请先选择一个配置文件。", L"MyCross", MB_OK | MB_ICONWARNING);
-        return;
-    }
-
-    const std::wstring newName = GetProfileNameInput();
-    if (newName.empty()) {
-        MessageBoxW(g_mainWindow, L"请输入新的配置名。", L"MyCross", MB_OK | MB_ICONWARNING);
-        return;
-    }
-
-    if (_wcsicmp(newName.c_str(), g_activeProfileName.c_str()) == 0) {
-        MessageBoxW(g_mainWindow, L"配置名未变化。", L"MyCross", MB_OK | MB_ICONINFORMATION);
-        return;
-    }
-
-    const std::wstring oldPath = BuildProfilePath(g_activeProfileName);
-    const std::wstring newPath = BuildProfilePath(newName);
-
-    if (GetFileAttributesW(newPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
-        MessageBoxW(g_mainWindow, L"目标配置名已存在，请换一个名称。", L"MyCross", MB_OK | MB_ICONWARNING);
-        return;
-    }
-
-    if (!MoveFileW(oldPath.c_str(), newPath.c_str())) {
-        MessageBoxW(g_mainWindow, L"重命名失败。", L"MyCross", MB_OK | MB_ICONERROR);
-        return;
-    }
-
-    g_activeProfileName = newName;
-    RefreshProfileList(newName);
-    MessageBoxW(g_mainWindow, L"配置重命名成功。", L"MyCross", MB_OK | MB_ICONINFORMATION);
-}
-
-HWND CreateLabel(HWND parent, const wchar_t* text, int x, int y, int w, int h)
-{
-    HWND label = CreateWindowW(
-        L"STATIC",
-        text,
-        WS_CHILD | WS_VISIBLE,
-        x,
-        y,
-        w,
-        h,
-        parent,
-        nullptr,
-        g_instance,
-        nullptr);
-    SetControlFont(label, g_fontRegular);
-    return label;
-}
-
-HWND CreateEdit(HWND parent, int id, int x, int y, int w, int h)
-{
-    HWND edit = CreateWindowExW(
-        WS_EX_CLIENTEDGE,
-        L"EDIT",
-        L"",
-        WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL | ES_CENTER,
-        x,
-        y,
-        w,
-        h,
-        parent,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
-        g_instance,
-        nullptr);
-    SetControlFont(edit, g_fontRegular);
-    return edit;
-}
-
-HWND CreateButton(HWND parent, const wchar_t* text, int id, int x, int y, int w, int h)
-{
-    HWND button = CreateWindowW(
-        L"BUTTON",
-        text,
-        WS_CHILD | WS_VISIBLE | BS_FLAT,
-        x,
-        y,
-        w,
-        h,
-        parent,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(id)),
-        g_instance,
-        nullptr);
-    SetControlFont(button, g_fontRegular);
-    return button;
-}
-
-HWND CreateSectionTitle(HWND parent, const wchar_t* text, int x, int y, int w, int h)
-{
-    HWND label = CreateWindowW(
-        L"STATIC",
-        text,
-        WS_CHILD | WS_VISIBLE,
-        x,
-        y,
-        w,
-        h,
-        parent,
-        nullptr,
-        g_instance,
-        nullptr);
-    SetControlFont(label, g_fontSection);
-    return label;
-}
-
-void CreateMainControls(HWND hwnd)
-{
-    CreateUiFonts();
-
-    HWND title = CreateWindowW(L"STATIC", L"MyCross 控制台", WS_CHILD | WS_VISIBLE,
-        28, 18, 340, 42, hwnd, nullptr, g_instance, nullptr);
-    SetControlFont(title, g_fontTitle);
-    CreateLabel(hwnd, L"专业级准星控制面板", 30, 62, 320, 24);
-
-    CreateSectionTitle(hwnd, L"配置管理", 36, 98, 140, 28);
-    CreateLabel(hwnd, L"当前配置", 38, 136, 90, 24);
-    g_profileCombo = CreateWindowW(
-        L"COMBOBOX",
-        L"",
-        WS_CHILD | WS_VISIBLE | CBS_DROPDOWNLIST | WS_VSCROLL,
-        124,
-        134,
-        280,
-        240,
-        hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_PROFILE_COMBO)),
-        g_instance,
-        nullptr);
-    SetControlFont(g_profileCombo, g_fontRegular);
-
-    g_buttonRefresh = CreateButton(hwnd, L"刷新", IDC_BUTTON_REFRESH, 420, 134, 80, 32);
-    g_buttonNew = CreateButton(hwnd, L"新建配置", IDC_BUTTON_NEW, 508, 134, 110, 32);
-    g_buttonSave = CreateButton(hwnd, L"保存当前配置", IDC_BUTTON_SAVE, 420, 176, 198, 32);
-
-    CreateLabel(hwnd, L"配置名", 38, 178, 90, 24);
-    g_editProfileName = CreateEdit(hwnd, IDC_EDIT_PROFILE_NAME, 124, 176, 280, 30);
-    g_buttonRename = CreateButton(hwnd, L"重命名当前", IDC_BUTTON_RENAME, 508, 176, 110, 32);
-
-    CreateSectionTitle(hwnd, L"准星参数", 36, 232, 140, 28);
-    CreateLabel(hwnd, L"X (-1=居中)", 38, 272, 120, 24);
-    CreateLabel(hwnd, L"Y (-1=居中)", 38, 314, 120, 24);
-    CreateLabel(hwnd, L"窗口尺寸", 38, 356, 120, 24);
-    CreateLabel(hwnd, L"准星半径", 38, 398, 120, 24);
-    CreateLabel(hwnd, L"线宽", 38, 440, 120, 24);
-
-    g_editX = CreateEdit(hwnd, IDC_EDIT_X, 136, 270, 120, 30);
-    g_editY = CreateEdit(hwnd, IDC_EDIT_Y, 136, 312, 120, 30);
-    g_editWindowSize = CreateEdit(hwnd, IDC_EDIT_WINDOW_SIZE, 136, 354, 120, 30);
-    g_editCrossHalf = CreateEdit(hwnd, IDC_EDIT_CROSS_HALF, 136, 396, 120, 30);
-    g_editLineWidth = CreateEdit(hwnd, IDC_EDIT_LINE_WIDTH, 136, 438, 120, 30);
-
-    CreateLabel(hwnd, L"颜色 R", 308, 272, 70, 24);
-    CreateLabel(hwnd, L"颜色 G", 308, 314, 70, 24);
-    CreateLabel(hwnd, L"颜色 B", 308, 356, 70, 24);
-
-    g_editR = CreateEdit(hwnd, IDC_EDIT_R, 380, 270, 100, 30);
-    g_editG = CreateEdit(hwnd, IDC_EDIT_G, 380, 312, 100, 30);
-    g_editB = CreateEdit(hwnd, IDC_EDIT_B, 380, 354, 100, 30);
-
-    CreateLabel(hwnd, L"颜色预览", 514, 272, 100, 24);
-    g_colorSwatch = CreateWindowExW(
-        WS_EX_CLIENTEDGE,
-        L"STATIC",
-        L"",
-        WS_CHILD | WS_VISIBLE,
-        514,
-        304,
-        126,
-        96,
-        hwnd,
-        reinterpret_cast<HMENU>(static_cast<INT_PTR>(IDC_COLOR_SWATCH)),
-        g_instance,
-        nullptr);
-    SetControlFont(g_colorSwatch, g_fontRegular);
-
-    CreateSectionTitle(hwnd, L"运行控制", 308, 408, 140, 28);
-    g_toggleButton = CreateButton(hwnd, L"启动准星叠加", IDC_BUTTON_TOGGLE, 308, 440, 240, 44);
-    g_statusLabel = CreateLabel(hwnd, L"状态: 已停止", 546, 444, 130, 24);
-    CreateLabel(hwnd, L"全局热键: Ctrl + Alt + Shift + F12", 308, 492, 320, 24);
-}
-
-bool IsConfigEditId(int id)
-{
-    return id == IDC_EDIT_X || id == IDC_EDIT_Y || id == IDC_EDIT_WINDOW_SIZE ||
-        id == IDC_EDIT_CROSS_HALF || id == IDC_EDIT_LINE_WIDTH ||
-        id == IDC_EDIT_R || id == IDC_EDIT_G || id == IDC_EDIT_B;
+    InvalidateRect(g_overlayWindow, nullptr, TRUE);
 }
 
 LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
     case WM_PAINT: {
+        CrosshairConfig c;
+        {
+            std::lock_guard<std::mutex> lock(g_stateMutex);
+            c = g_config;
+        }
+
         PAINTSTRUCT ps = {};
         HDC hdc = BeginPaint(hwnd, &ps);
 
-        HPEN pen = CreatePen(PS_SOLID, g_currentConfig.lineWidth, RGB(g_currentConfig.colorR, g_currentConfig.colorG, g_currentConfig.colorB));
+        HPEN pen = CreatePen(PS_SOLID, c.lineWidth, RGB(c.colorR, c.colorG, c.colorB));
         HGDIOBJ oldPen = SelectObject(hdc, pen);
 
-        const int cx = g_currentConfig.windowSize / 2;
-        const int cy = g_currentConfig.windowSize / 2;
+        const int cx = c.windowSize / 2;
+        const int cy = c.windowSize / 2;
 
-        MoveToEx(hdc, cx - g_currentConfig.crossHalf, cy, nullptr);
-        LineTo(hdc, cx + g_currentConfig.crossHalf, cy);
-        MoveToEx(hdc, cx, cy - g_currentConfig.crossHalf, nullptr);
-        LineTo(hdc, cx, cy + g_currentConfig.crossHalf);
+        MoveToEx(hdc, cx - c.crossHalf, cy, nullptr);
+        LineTo(hdc, cx + c.crossHalf, cy);
+        MoveToEx(hdc, cx, cy - c.crossHalf, nullptr);
+        LineTo(hdc, cx, cy + c.crossHalf);
 
         SelectObject(hdc, oldPen);
         DeleteObject(pen);
@@ -874,8 +338,6 @@ LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     case WM_DESTROY:
         if (hwnd == g_overlayWindow) {
             g_overlayWindow = nullptr;
-            g_overlayRunning = false;
-            UpdateToggleButtonText();
         }
         return 0;
 
@@ -886,114 +348,26 @@ LRESULT CALLBACK OverlayWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
-LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK ControlWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg) {
-    case WM_CREATE:
-        g_mainWindow = hwnd;
-        CreateMainControls(hwnd);
-        EnsureConfigFolderAndDefaultProfile();
-        RefreshProfileList(L"default.ini");
-        RegisterHotKey(hwnd, kHotkeyId, kQuitHotkeyModifiers, kQuitHotkeyVirtualKey);
+    case WM_APP_APPLY:
+        ApplyOverlayFromState();
         return 0;
-
-    case WM_COMMAND: {
-        const int id = LOWORD(wParam);
-        const int notifyCode = HIWORD(wParam);
-
-        if (IsConfigEditId(id) && notifyCode == EN_CHANGE) {
-            ApplyConfigToOverlayIfRunning();
-            return 0;
-        }
-
-        if (id == IDC_PROFILE_COMBO && notifyCode == CBN_SELCHANGE) {
-            LoadSelectedProfileToUi();
-            return 0;
-        }
-
-        switch (id) {
-        case IDC_BUTTON_REFRESH:
-            RefreshProfileList();
-            return 0;
-
-        case IDC_BUTTON_NEW:
-            CreateNewProfileFromCurrent();
-            return 0;
-
-        case IDC_BUTTON_SAVE:
-            SaveCurrentProfile();
-            return 0;
-
-        case IDC_BUTTON_RENAME:
-            RenameCurrentProfile();
-            return 0;
-
-        case IDC_BUTTON_TOGGLE:
-            ToggleOverlay();
-            return 0;
-
-        default:
-            break;
-        }
-
-        return 0;
-    }
-
-    case WM_CTLCOLORSTATIC: {
-        HDC hdc = reinterpret_cast<HDC>(wParam);
-        HWND ctrl = reinterpret_cast<HWND>(lParam);
-
-        if (ctrl == g_colorSwatch && g_swatchBrush != nullptr) {
-            SetBkMode(hdc, OPAQUE);
-            return reinterpret_cast<INT_PTR>(g_swatchBrush);
-        }
-
-        SetTextColor(hdc, RGB(28, 33, 40));
-        SetBkMode(hdc, TRANSPARENT);
-        return reinterpret_cast<INT_PTR>(g_mainBgBrush != nullptr ? g_mainBgBrush : GetSysColorBrush(COLOR_WINDOW));
-    }
-
-    case WM_PAINT: {
-        PAINTSTRUCT ps = {};
-        HDC hdc = BeginPaint(hwnd, &ps);
-        RECT rc = {};
-        GetClientRect(hwnd, &rc);
-
-        FillRect(hdc, &rc, g_mainBgBrush != nullptr ? g_mainBgBrush : GetSysColorBrush(COLOR_WINDOW));
-
-        RECT cardTop = { 24, 88, 676, 220 };
-        RECT cardBody = { 24, 222, 676, 478 };
-        RECT cardAction = { 292, 398, 676, 532 };
-
-        FillRect(hdc, &cardTop, g_cardBrush != nullptr ? g_cardBrush : GetSysColorBrush(COLOR_WINDOW));
-        FillRect(hdc, &cardBody, g_cardBrush != nullptr ? g_cardBrush : GetSysColorBrush(COLOR_WINDOW));
-        FillRect(hdc, &cardAction, g_cardBrush != nullptr ? g_cardBrush : GetSysColorBrush(COLOR_WINDOW));
-
-        HPEN borderPen = CreatePen(PS_SOLID, 1, RGB(220, 226, 236));
-        HGDIOBJ oldPen = SelectObject(hdc, borderPen);
-        HGDIOBJ oldBrush = SelectObject(hdc, GetStockObject(NULL_BRUSH));
-        Rectangle(hdc, cardTop.left, cardTop.top, cardTop.right, cardTop.bottom);
-        Rectangle(hdc, cardBody.left, cardBody.top, cardBody.right, cardBody.bottom);
-        Rectangle(hdc, cardAction.left, cardAction.top, cardAction.right, cardAction.bottom);
-        SelectObject(hdc, oldBrush);
-        SelectObject(hdc, oldPen);
-        DeleteObject(borderPen);
-
-        EndPaint(hwnd, &ps);
-        return 0;
-    }
 
     case WM_HOTKEY:
         if (wParam == kHotkeyId) {
-            StopOverlay();
+            {
+                std::lock_guard<std::mutex> lock(g_stateMutex);
+                g_overlayRunning = false;
+            }
+            ApplyOverlayFromState();
             return 0;
         }
         break;
 
     case WM_DESTROY:
-        StopOverlay();
         UnregisterHotKey(hwnd, kHotkeyId);
-        DestroyUiResources();
         PostQuitMessage(0);
         return 0;
 
@@ -1004,87 +378,35 @@ LRESULT CALLBACK MainWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
 
-bool RegisterMainWindowClass()
+DWORD WINAPI OverlayThreadProc(LPVOID)
 {
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = MainWndProc;
-    wc.hInstance = g_instance;
-    wc.lpszClassName = kMainWindowClass;
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(COLOR_WINDOW + 1);
+    WNDCLASSW overlayClass = {};
+    overlayClass.lpfnWndProc = OverlayWndProc;
+    overlayClass.hInstance = g_instance;
+    overlayClass.lpszClassName = kOverlayClassName;
+    overlayClass.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
+    RegisterClassW(&overlayClass);
 
-    return RegisterClassW(&wc) != 0;
-}
+    WNDCLASSW controlClass = {};
+    controlClass.lpfnWndProc = ControlWndProc;
+    controlClass.hInstance = g_instance;
+    controlClass.lpszClassName = kControlClassName;
+    RegisterClassW(&controlClass);
 
-bool RegisterOverlayWindowClass()
-{
-    WNDCLASSW wc = {};
-    wc.lpfnWndProc = OverlayWndProc;
-    wc.hInstance = g_instance;
-    wc.lpszClassName = kOverlayWindowClass;
-    wc.hbrBackground = reinterpret_cast<HBRUSH>(GetStockObject(BLACK_BRUSH));
-
-    return RegisterClassW(&wc) != 0;
-}
-
-void ApplyCommandLineInitialConfig()
-{
-    int argc = 0;
-    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
-    if (argv == nullptr) {
-        return;
-    }
-
-    if (argc >= 3) {
-        g_currentConfig.x = ParseIntText(argv[1], g_currentConfig.x);
-        g_currentConfig.y = ParseIntText(argv[2], g_currentConfig.y);
-    }
-
-    for (int i = 1; i < argc; ++i) {
-        if (wcsncmp(argv[i], L"--x=", 4) == 0) {
-            g_currentConfig.x = ParseIntText(argv[i] + 4, g_currentConfig.x);
-        } else if (wcsncmp(argv[i], L"--y=", 4) == 0) {
-            g_currentConfig.y = ParseIntText(argv[i] + 4, g_currentConfig.y);
-        }
-    }
-
-    NormalizeConfig(g_currentConfig);
-    LocalFree(argv);
-}
-}  // namespace
-
-int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCmd)
-{
-    g_instance = instance;
-    g_exeDir = GetExeDir();
-    g_configDir = g_exeDir + L"\\configs";
-    g_currentConfig = DefaultConfig();
-    ApplyCommandLineInitialConfig();
-
-    if (!RegisterMainWindowClass() || !RegisterOverlayWindowClass()) {
-        MessageBoxW(nullptr, L"窗口类注册失败。", L"MyCross", MB_OK | MB_ICONERROR);
-        return 1;
-    }
-
-    HWND hwnd = CreateWindowW(
-        kMainWindowClass,
-        L"MyCross 控制台",
-        WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        kMainWindowWidth,
-        kMainWindowHeight,
+    g_controlWindow = CreateWindowW(
+        kControlClassName,
+        L"",
+        WS_OVERLAPPED,
+        0,
+        0,
+        0,
+        0,
         nullptr,
         nullptr,
-        instance,
+        g_instance,
         nullptr);
 
-    if (hwnd == nullptr) {
-        MessageBoxW(nullptr, L"主窗口创建失败。", L"MyCross", MB_OK | MB_ICONERROR);
-        return 1;
-    }
-
-    ShowWindow(hwnd, showCmd == 0 ? SW_SHOW : showCmd);
-    UpdateWindow(hwnd);
+    RegisterHotKey(g_controlWindow, kHotkeyId, kQuitHotkeyModifiers, kQuitHotkeyVirtualKey);
 
     MSG msg = {};
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
@@ -1092,5 +414,585 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int showCmd)
         DispatchMessageW(&msg);
     }
 
+    if (g_overlayWindow != nullptr) {
+        DestroyWindow(g_overlayWindow);
+        g_overlayWindow = nullptr;
+    }
+
+    if (g_controlWindow != nullptr) {
+        DestroyWindow(g_controlWindow);
+        g_controlWindow = nullptr;
+    }
+
+    return 0;
+}
+
+void NotifyOverlayApply()
+{
+    HWND hwnd = g_controlWindow;
+    if (hwnd != nullptr) {
+        PostMessageW(hwnd, WM_APP_APPLY, 0, 0);
+    }
+}
+
+std::string ReadFileUtf8(const std::wstring& path)
+{
+    std::ifstream in(path.c_str(), std::ios::binary);
+    if (!in) return "";
+    std::ostringstream ss;
+    ss << in.rdbuf();
+    return ss.str();
+}
+
+std::string UrlDecode(const std::string& text)
+{
+    std::string out;
+    out.reserve(text.size());
+    for (size_t i = 0; i < text.size(); ++i) {
+        if (text[i] == '%' && i + 2 < text.size()) {
+            const std::string hex = text.substr(i + 1, 2);
+            const int v = strtol(hex.c_str(), nullptr, 16);
+            out.push_back(static_cast<char>(v));
+            i += 2;
+        } else if (text[i] == '+') {
+            out.push_back(' ');
+        } else {
+            out.push_back(text[i]);
+        }
+    }
+    return out;
+}
+
+std::map<std::string, std::string> ParseForm(const std::string& body)
+{
+    std::map<std::string, std::string> out;
+    size_t start = 0;
+    while (start <= body.size()) {
+        const size_t amp = body.find('&', start);
+        const std::string part = body.substr(start, amp == std::string::npos ? std::string::npos : amp - start);
+        const size_t eq = part.find('=');
+        if (eq != std::string::npos) {
+            const std::string key = UrlDecode(part.substr(0, eq));
+            const std::string val = UrlDecode(part.substr(eq + 1));
+            out[key] = val;
+        } else if (!part.empty()) {
+            out[UrlDecode(part)] = "";
+        }
+
+        if (amp == std::string::npos) break;
+        start = amp + 1;
+    }
+    return out;
+}
+
+bool ReadHttpRequest(SOCKET client, std::string& request)
+{
+    char buffer[4096];
+    request.clear();
+
+    size_t contentLength = 0;
+    bool headerParsed = false;
+    size_t headerEndPos = std::string::npos;
+
+    while (true) {
+        const int n = recv(client, buffer, sizeof(buffer), 0);
+        if (n <= 0) {
+            return false;
+        }
+        request.append(buffer, buffer + n);
+
+        if (!headerParsed) {
+            headerEndPos = request.find("\r\n\r\n");
+            if (headerEndPos != std::string::npos) {
+                headerParsed = true;
+                const std::string headers = request.substr(0, headerEndPos + 4);
+                const std::string key = "Content-Length:";
+                size_t pos = headers.find(key);
+                if (pos != std::string::npos) {
+                    pos += key.size();
+                    while (pos < headers.size() && (headers[pos] == ' ' || headers[pos] == '\t')) ++pos;
+                    size_t end = pos;
+                    while (end < headers.size() && headers[end] >= '0' && headers[end] <= '9') ++end;
+                    contentLength = static_cast<size_t>(strtoul(headers.substr(pos, end - pos).c_str(), nullptr, 10));
+                }
+            }
+        }
+
+        if (headerParsed) {
+            const size_t bodyOffset = headerEndPos + 4;
+            const size_t haveBody = request.size() - bodyOffset;
+            if (haveBody >= contentLength) {
+                return true;
+            }
+        }
+    }
+}
+
+void SendHttp(SOCKET client, int code, const char* status, const char* contentType, const std::string& body)
+{
+    std::ostringstream out;
+    out << "HTTP/1.1 " << code << ' ' << status << "\r\n";
+    out << "Content-Type: " << contentType << "\r\n";
+    out << "Content-Length: " << body.size() << "\r\n";
+    out << "Connection: close\r\n";
+    out << "Cache-Control: no-cache\r\n\r\n";
+    out << body;
+
+    const std::string response = out.str();
+    send(client, response.c_str(), static_cast<int>(response.size()), 0);
+}
+
+std::string BuildStateJson()
+{
+    CrosshairConfig c;
+    bool running;
+    std::wstring active;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        c = g_config;
+        running = g_overlayRunning;
+        active = g_activeProfile;
+    }
+
+    const auto profiles = EnumerateProfiles();
+    std::ostringstream json;
+    json << "{";
+    json << "\"running\":" << (running ? "true" : "false") << ",";
+    json << "\"active_profile\":\"" << JsonEscape(WideToUtf8(active)) << "\",";
+    json << "\"hotkey\":\"Ctrl+Alt+Shift+F12\",";
+    json << "\"config\":{";
+    json << "\"x\":" << c.x << ",";
+    json << "\"y\":" << c.y << ",";
+    json << "\"window_size\":" << c.windowSize << ",";
+    json << "\"cross_half\":" << c.crossHalf << ",";
+    json << "\"line_width\":" << c.lineWidth << ",";
+    json << "\"color_r\":" << c.colorR << ",";
+    json << "\"color_g\":" << c.colorG << ",";
+    json << "\"color_b\":" << c.colorB << "},";
+    json << "\"profiles\":[";
+    for (size_t i = 0; i < profiles.size(); ++i) {
+        if (i) json << ',';
+        json << "\"" << JsonEscape(WideToUtf8(profiles[i])) << "\"";
+    }
+    json << "]}";
+    return json.str();
+}
+
+CrosshairConfig ReadConfigFromForm(const std::map<std::string, std::string>& form, const CrosshairConfig& fallback)
+{
+    CrosshairConfig c = fallback;
+    auto get = [&](const char* key, int oldV) -> int {
+        const auto it = form.find(key);
+        if (it == form.end()) return oldV;
+        return ParseInt(it->second, oldV);
+    };
+
+    c.x = get("x", c.x);
+    c.y = get("y", c.y);
+    c.windowSize = get("window_size", c.windowSize);
+    c.crossHalf = get("cross_half", c.crossHalf);
+    c.lineWidth = get("line_width", c.lineWidth);
+    c.colorR = get("color_r", c.colorR);
+    c.colorG = get("color_g", c.colorG);
+    c.colorB = get("color_b", c.colorB);
+    NormalizeConfig(c);
+    return c;
+}
+
+void ApplyCommandLineArgs()
+{
+    int argc = 0;
+    LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+    if (!argv) return;
+
+    CrosshairConfig c;
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        c = g_config;
+    }
+
+    if (argc >= 3) {
+        c.x = _wtoi(argv[1]);
+        c.y = _wtoi(argv[2]);
+    }
+
+    for (int i = 1; i < argc; ++i) {
+        if (wcsncmp(argv[i], L"--x=", 4) == 0) c.x = _wtoi(argv[i] + 4);
+        else if (wcsncmp(argv[i], L"--y=", 4) == 0) c.y = _wtoi(argv[i] + 4);
+    }
+
+    NormalizeConfig(c);
+    {
+        std::lock_guard<std::mutex> lock(g_stateMutex);
+        g_config = c;
+    }
+
+    LocalFree(argv);
+}
+
+bool HandleApi(SOCKET client, const std::string& method, const std::string& path, const std::string& body)
+{
+    if (method == "GET" && path == "/api/state") {
+        SendHttp(client, 200, "OK", "application/json; charset=utf-8", BuildStateJson());
+        return true;
+    }
+
+    if (method == "POST" && path == "/api/toggle") {
+        const auto form = ParseForm(body);
+        const bool running = form.find("running") != form.end() && form.at("running") == "1";
+        {
+            std::lock_guard<std::mutex> lock(g_stateMutex);
+            g_overlayRunning = running;
+        }
+        NotifyOverlayApply();
+        SendHttp(client, 200, "OK", "application/json; charset=utf-8", BuildStateJson());
+        return true;
+    }
+
+    if (method == "POST" && path == "/api/apply") {
+        const auto form = ParseForm(body);
+        {
+            std::lock_guard<std::mutex> lock(g_stateMutex);
+            g_config = ReadConfigFromForm(form, g_config);
+        }
+        NotifyOverlayApply();
+        SendHttp(client, 200, "OK", "application/json; charset=utf-8", BuildStateJson());
+        return true;
+    }
+
+    if (method == "POST" && path == "/api/profile/load") {
+        const auto form = ParseForm(body);
+        const auto it = form.find("name");
+        if (it == form.end()) {
+            SendHttp(client, 400, "Bad Request", "text/plain; charset=utf-8", "missing name");
+            return true;
+        }
+
+        const std::wstring name = NormalizeProfileName(Utf8ToWide(it->second));
+        if (name.empty()) {
+            SendHttp(client, 400, "Bad Request", "text/plain; charset=utf-8", "invalid name");
+            return true;
+        }
+
+        const std::wstring pathW = BuildProfilePath(name);
+        if (GetFileAttributesW(pathW.c_str()) == INVALID_FILE_ATTRIBUTES) {
+            SendHttp(client, 404, "Not Found", "text/plain; charset=utf-8", "profile not found");
+            return true;
+        }
+
+        CrosshairConfig loaded = LoadConfigFromFile(pathW);
+        {
+            std::lock_guard<std::mutex> lock(g_stateMutex);
+            g_config = loaded;
+            g_activeProfile = name;
+        }
+        NotifyOverlayApply();
+        SendHttp(client, 200, "OK", "application/json; charset=utf-8", BuildStateJson());
+        return true;
+    }
+
+    if (method == "POST" && path == "/api/profile/save") {
+        const auto form = ParseForm(body);
+        std::wstring name;
+        {
+            std::lock_guard<std::mutex> lock(g_stateMutex);
+            name = g_activeProfile;
+        }
+
+        const auto itName = form.find("name");
+        if (itName != form.end()) {
+            const std::wstring named = NormalizeProfileName(Utf8ToWide(itName->second));
+            if (!named.empty()) name = named;
+        }
+
+        if (name.empty()) {
+            SendHttp(client, 400, "Bad Request", "text/plain; charset=utf-8", "invalid profile name");
+            return true;
+        }
+
+        CrosshairConfig cfg;
+        {
+            std::lock_guard<std::mutex> lock(g_stateMutex);
+            g_config = ReadConfigFromForm(form, g_config);
+            cfg = g_config;
+            g_activeProfile = name;
+        }
+
+        if (!SaveConfigToFile(BuildProfilePath(name), cfg)) {
+            SendHttp(client, 500, "Internal Server Error", "text/plain; charset=utf-8", "save failed");
+            return true;
+        }
+
+        NotifyOverlayApply();
+        SendHttp(client, 200, "OK", "application/json; charset=utf-8", BuildStateJson());
+        return true;
+    }
+
+    if (method == "POST" && path == "/api/profile/new") {
+        const auto form = ParseForm(body);
+        const auto itName = form.find("name");
+        if (itName == form.end()) {
+            SendHttp(client, 400, "Bad Request", "text/plain; charset=utf-8", "missing name");
+            return true;
+        }
+
+        std::wstring name = NormalizeProfileName(Utf8ToWide(itName->second));
+        if (name.empty()) {
+            SendHttp(client, 400, "Bad Request", "text/plain; charset=utf-8", "invalid profile name");
+            return true;
+        }
+
+        const std::wstring pathW = BuildProfilePath(name);
+        if (GetFileAttributesW(pathW.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            SendHttp(client, 409, "Conflict", "text/plain; charset=utf-8", "profile exists");
+            return true;
+        }
+
+        CrosshairConfig cfg;
+        {
+            std::lock_guard<std::mutex> lock(g_stateMutex);
+            g_config = ReadConfigFromForm(form, g_config);
+            cfg = g_config;
+            g_activeProfile = name;
+        }
+
+        if (!SaveConfigToFile(pathW, cfg)) {
+            SendHttp(client, 500, "Internal Server Error", "text/plain; charset=utf-8", "create failed");
+            return true;
+        }
+
+        NotifyOverlayApply();
+        SendHttp(client, 200, "OK", "application/json; charset=utf-8", BuildStateJson());
+        return true;
+    }
+
+    if (method == "POST" && path == "/api/profile/rename") {
+        const auto form = ParseForm(body);
+        const auto itOld = form.find("old_name");
+        const auto itNew = form.find("new_name");
+        if (itOld == form.end() || itNew == form.end()) {
+            SendHttp(client, 400, "Bad Request", "text/plain; charset=utf-8", "missing names");
+            return true;
+        }
+
+        std::wstring oldName = NormalizeProfileName(Utf8ToWide(itOld->second));
+        std::wstring newName = NormalizeProfileName(Utf8ToWide(itNew->second));
+        if (oldName.empty() || newName.empty()) {
+            SendHttp(client, 400, "Bad Request", "text/plain; charset=utf-8", "invalid name");
+            return true;
+        }
+
+        const std::wstring oldPath = BuildProfilePath(oldName);
+        const std::wstring newPath = BuildProfilePath(newName);
+        if (GetFileAttributesW(newPath.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            SendHttp(client, 409, "Conflict", "text/plain; charset=utf-8", "target exists");
+            return true;
+        }
+
+        if (!MoveFileW(oldPath.c_str(), newPath.c_str())) {
+            SendHttp(client, 500, "Internal Server Error", "text/plain; charset=utf-8", "rename failed");
+            return true;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(g_stateMutex);
+            if (_wcsicmp(g_activeProfile.c_str(), oldName.c_str()) == 0) {
+                g_activeProfile = newName;
+            }
+        }
+
+        SendHttp(client, 200, "OK", "application/json; charset=utf-8", BuildStateJson());
+        return true;
+    }
+
+    if (method == "POST" && path == "/api/quit") {
+        g_exitRequested = true;
+        if (g_listenSocket != INVALID_SOCKET) {
+            closesocket(g_listenSocket);
+            g_listenSocket = INVALID_SOCKET;
+        }
+        SendHttp(client, 200, "OK", "text/plain; charset=utf-8", "bye");
+        return true;
+    }
+
+    return false;
+}
+
+void HandleClient(SOCKET client)
+{
+    std::string raw;
+    if (!ReadHttpRequest(client, raw)) {
+        closesocket(client);
+        return;
+    }
+
+    const size_t headerEnd = raw.find("\r\n\r\n");
+    if (headerEnd == std::string::npos) {
+        SendHttp(client, 400, "Bad Request", "text/plain; charset=utf-8", "bad request");
+        closesocket(client);
+        return;
+    }
+
+    const std::string headers = raw.substr(0, headerEnd);
+    const std::string body = raw.substr(headerEnd + 4);
+
+    std::istringstream hs(headers);
+    std::string requestLine;
+    std::getline(hs, requestLine);
+    if (!requestLine.empty() && requestLine.back() == '\r') {
+        requestLine.pop_back();
+    }
+
+    std::istringstream rl(requestLine);
+    std::string method, path, version;
+    rl >> method >> path >> version;
+
+    const size_t q = path.find('?');
+    if (q != std::string::npos) {
+        path = path.substr(0, q);
+    }
+
+    if (HandleApi(client, method, path, body)) {
+        closesocket(client);
+        return;
+    }
+
+    if (method == "GET" && path == "/") {
+        const std::wstring indexPath = g_webDir + L"\\index.html";
+        const std::string html = ReadFileUtf8(indexPath);
+        if (html.empty()) {
+            SendHttp(client, 500, "Internal Server Error", "text/plain; charset=utf-8", "index.html missing");
+        } else {
+            SendHttp(client, 200, "OK", "text/html; charset=utf-8", html);
+        }
+        closesocket(client);
+        return;
+    }
+
+    SendHttp(client, 404, "Not Found", "text/plain; charset=utf-8", "not found");
+    closesocket(client);
+}
+
+bool StartHttpServer()
+{
+    WSADATA wsa = {};
+    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) {
+        return false;
+    }
+
+    g_listenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    if (g_listenSocket == INVALID_SOCKET) {
+        WSACleanup();
+        return false;
+    }
+
+    sockaddr_in addr = {};
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(kServerPort);
+    inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr);
+
+    int yes = 1;
+    setsockopt(g_listenSocket, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&yes), sizeof(yes));
+
+    if (bind(g_listenSocket, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+        closesocket(g_listenSocket);
+        g_listenSocket = INVALID_SOCKET;
+        WSACleanup();
+        return false;
+    }
+
+    if (listen(g_listenSocket, 16) != 0) {
+        closesocket(g_listenSocket);
+        g_listenSocket = INVALID_SOCKET;
+        WSACleanup();
+        return false;
+    }
+
+    return true;
+}
+
+void StopHttpServer()
+{
+    if (g_listenSocket != INVALID_SOCKET) {
+        closesocket(g_listenSocket);
+        g_listenSocket = INVALID_SOCKET;
+    }
+    WSACleanup();
+}
+
+void InitDefaultState()
+{
+    EnsureConfigDirectory();
+    const std::wstring defaultPath = BuildProfilePath(L"default.ini");
+    CrosshairConfig loaded = LoadConfigFromFile(defaultPath);
+
+    std::lock_guard<std::mutex> lock(g_stateMutex);
+    g_config = loaded;
+    g_overlayRunning = false;
+    g_activeProfile = L"default.ini";
+}
+
+void StartOverlayThread()
+{
+    g_overlayThread = std::thread([]() {
+        OverlayThreadProc(nullptr);
+    });
+
+    for (int i = 0; i < 200; ++i) {
+        if (g_controlWindow != nullptr) {
+            break;
+        }
+        Sleep(10);
+    }
+}
+
+void StopOverlayThread()
+{
+    if (g_controlWindow != nullptr) {
+        PostMessageW(g_controlWindow, WM_CLOSE, 0, 0);
+    }
+    if (g_overlayThread.joinable()) {
+        g_overlayThread.join();
+    }
+}
+}  // namespace
+
+int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
+{
+    g_instance = instance;
+    g_exeDir = GetExeDir();
+    g_configDir = g_exeDir + L"\\configs";
+    g_webDir = g_exeDir + L"\\web";
+
+    InitDefaultState();
+    ApplyCommandLineArgs();
+
+    StartOverlayThread();
+    NotifyOverlayApply();
+
+    if (!StartHttpServer()) {
+        MessageBoxW(nullptr, L"启动 HTTP 服务失败（端口 5188）。", L"MyCross", MB_OK | MB_ICONERROR);
+        StopOverlayThread();
+        return 1;
+    }
+
+    ShellExecuteW(nullptr, L"open", L"http://127.0.0.1:5188/", nullptr, nullptr, SW_SHOWNORMAL);
+
+    while (!g_exitRequested) {
+        sockaddr_in clientAddr = {};
+        int len = sizeof(clientAddr);
+        SOCKET client = accept(g_listenSocket, reinterpret_cast<sockaddr*>(&clientAddr), &len);
+        if (client == INVALID_SOCKET) {
+            if (g_exitRequested) {
+                break;
+            }
+            continue;
+        }
+
+        HandleClient(client);
+    }
+
+    StopHttpServer();
+    StopOverlayThread();
     return 0;
 }

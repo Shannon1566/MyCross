@@ -8,7 +8,7 @@ if errorlevel 1 (
 )
 
 echo Building crosshair.exe ...
-g++ -std=c++17 -O2 -municode -mwindows crosshair.cpp -o crosshair.exe
+g++ -std=c++17 -O2 -municode -mwindows crosshair.cpp -o crosshair.exe -lws2_32
 if errorlevel 1 (
   echo [ERROR] Build failed.
   exit /b 1
