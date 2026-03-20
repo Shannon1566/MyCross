@@ -1,0 +1,10 @@
+﻿# Ignore build outputs
+*.exe
+*.obj
+*.o
+*.pdb
+
+# Ignore common temp files
+*.log
+*.tmp
+*.cache
