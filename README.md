@@ -1,109 +1,64 @@
 ﻿# MyCross
 
 <p align="center">
-  <b>Windows 准星叠加工具（图形化控制台 + 多配置文件）</b>
+  <b>Web UI 驱动的 Windows 准星叠加工具</b>
 </p>
 
-<p align="center">
-  <img alt="platform" src="https://img.shields.io/badge/Platform-Windows-0078D6?style=for-the-badge&logo=windows" />
-  <img alt="language" src="https://img.shields.io/badge/Language-C%2B%2B17-00599C?style=for-the-badge&logo=cplusplus" />
-  <img alt="ui" src="https://img.shields.io/badge/UI-Win32-success?style=for-the-badge" />
-  <img alt="profiles" src="https://img.shields.io/badge/Profiles-INI-informational?style=for-the-badge" />
-</p>
+## 这次重构
 
----
+- 前端改为 `Web UI`（本地浏览器界面）
+- 后端改为内置 `HTTP API`（`127.0.0.1:5188`）
+- 准星渲染仍由 Win32 完成（置顶、透明、鼠标穿透）
+- 支持多配置文件的加载/新建/保存/重命名
 
-## 项目简介
-
-`MyCross` 是一个轻量级 Windows 准星工具。双击程序后会进入图形化控制台，你可以在 UI 中：
-
-- 打开 / 关闭准星
-- 调整坐标、尺寸、线宽、颜色
-- 选择配置文件
-- 新建并保存多套配置
-
-## 核心功能
-
-- 图形化控制窗口（无需命令行也可完整使用）
-- 准星窗口置顶、透明、鼠标穿透
-- 低冲突关闭热键：`Ctrl + Alt + Shift + F12`
-- 配置文件持久化（`configs/*.ini`）
-- 支持多配置切换与快速新建
-
-## 快速开始
-
-### 1. 编译
+## 启动方式
 
 ```bat
 build.bat
-```
-
-或手动：
-
-```bat
-g++ -std=c++17 -O2 -municode -mwindows crosshair.cpp -o crosshair.exe
-```
-
-### 2. 运行
-
-```bat
 crosshair.exe
 ```
 
-双击 `crosshair.exe` 也是同样效果：会打开 `MyCross 控制台`。
-
-## 图形化使用流程
-
-1. 在顶部下拉框选择配置文件（默认 `default.ini`）
-2. 修改参数：`X/Y`、`窗口尺寸`、`准星半径`、`线宽`、`颜色 RGB`
-3. 点击 `打开准星` 开启叠加
-4. 点击 `保存` 将当前参数写入当前配置文件
-5. 点击 `新建` 基于当前参数生成新配置（如 `profile_001.ini`）
-6. 任意时刻可用 `Ctrl + Alt + Shift + F12` 关闭准星
-
-## 参数说明
-
-| 参数 | 说明 |
-|---|---|
-| X / Y | 准星中心屏幕坐标，`-1` 表示自动居中 |
-| 窗口尺寸 | 准星窗口总大小（像素） |
-| 准星半径 | 十字线向外延伸长度 |
-| 线宽 | 线条粗细 |
-| 颜色 R/G/B | 准星颜色通道值（0-255） |
-
-## 配置文件
-
-配置目录：
+程序启动后会自动打开浏览器控制台：
 
 ```text
-configs/
+http://127.0.0.1:5188/
 ```
 
-每个配置都是一个 `ini` 文件，例如：
+## Web UI 功能
 
-```ini
-[Crosshair]
-x=-1
-y=-1
-window_size=40
-cross_half=10
-line_width=2
-color_r=0
-color_g=255
-color_b=0
-```
+- 准星开关（启动/停止）
+- 参数实时应用（坐标、尺寸、线宽、RGB）
+- 配置管理：
+  - 加载配置
+  - 新建配置
+  - 保存当前配置
+  - 重命名配置
+- 颜色实时预览
 
-## 项目结构
+## 全局热键
+
+- 关闭准星：`Ctrl + Alt + Shift + F12`
+
+## 配置目录
 
 ```text
-MyCross/
-├─ crosshair.cpp
-├─ build.bat
-├─ .gitignore
-├─ README.md
-└─ configs/            # 运行后自动生成
+configs/*.ini
 ```
 
-## 免责声明
+默认配置：
 
-本项目仅用于学习与个人辅助用途，请遵守目标软件/平台的使用协议与当地法规。
+```text
+configs/default.ini
+```
+
+## 主要文件
+
+```text
+crosshair.cpp     # Win32 渲染 + HTTP API 服务
+web/index.html    # Web UI 前端
+build.bat         # 构建脚本
+```
+
+## 退出程序
+
+- 在 Web UI 中点击“退出程序”按钮
