@@ -988,7 +988,7 @@ bool LaunchAppWindow()
         si.cb = sizeof(si);
         ZeroMemory(&g_webAppProcess, sizeof(g_webAppProcess));
 
-        std::wstring cmd = L"\\\"" + edgeExe + L"\\\" --app=http://127.0.0.1:5188/ --new-window --window-size=1280,860";
+        std::wstring cmd = L"--app=http://127.0.0.1:5188/ --new-window --window-size=1280,860";
 
         BOOL ok = CreateProcessW(
             edgeExe.c_str(),
