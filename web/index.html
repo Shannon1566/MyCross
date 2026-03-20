@@ -388,7 +388,11 @@
       try {
         const old_name = document.getElementById("profileSelect").value;
         const new_name = document.getElementById("profileName").value.trim();
+        if (!old_name) return alert("请先选择要重命名的配置");
         if (!new_name) return alert("请先输入新的配置名");
+        if (old_name.toLowerCase() === (new_name.endsWith(".ini") ? new_name : `${new_name}.ini`).toLowerCase()) {
+          return alert("新旧配置名相同，无需重命名");
+        }
         const s = await post("/api/profile/rename", { old_name, new_name });
         renderState(s);
       } catch (e) {
@@ -406,8 +410,16 @@
       }
     });
 
-    document.getElementById("profileSelect").addEventListener("change", () => {
-      document.getElementById("profileName").value = document.getElementById("profileSelect").value;
+    document.getElementById("profileSelect").addEventListener("change", async () => {
+      const name = document.getElementById("profileSelect").value;
+      document.getElementById("profileName").value = name;
+      if (!name) return;
+      try {
+        const s = await post("/api/profile/load", { name });
+        renderState(s);
+      } catch (e) {
+        alert(`自动加载失败: ${e.message}`);
+      }
     });
 
     refreshAll();
