@@ -2,230 +2,62 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>MyCross Web 控制台</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MyCross 控制台</title>
   <style>
-    :root {
-      --bg-0: #0d1117;
-      --bg-1: #121826;
-      --card: rgba(255, 255, 255, 0.08);
-      --card-border: rgba(255, 255, 255, 0.16);
-      --text-main: #eef2ff;
-      --text-sub: #a8b0c5;
-      --accent: #5eead4;
-      --accent-2: #22d3ee;
-      --danger: #fb7185;
-      --ok: #34d399;
-      --radius: 16px;
-    }
-
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      min-height: 100vh;
-      font-family: "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
-      color: var(--text-main);
-      background:
-        radial-gradient(1200px 800px at 20% -10%, #1b2a4d 0%, transparent 70%),
-        radial-gradient(900px 700px at 100% 0%, #09303a 0%, transparent 70%),
-        linear-gradient(160deg, var(--bg-0), var(--bg-1));
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 28px;
-    }
-
-    .panel {
-      width: min(1080px, 100%);
-      border: 1px solid var(--card-border);
-      border-radius: 24px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.10), rgba(255,255,255,0.04));
-      backdrop-filter: blur(10px);
-      box-shadow: 0 32px 80px rgba(0,0,0,0.45);
-      padding: 26px;
-    }
-
-    .header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      margin-bottom: 18px;
-    }
-
-    .title {
-      font-size: 30px;
-      font-weight: 800;
-      letter-spacing: 0.3px;
-    }
-
-    .hotkey {
-      font-size: 13px;
-      color: var(--text-sub);
-      border: 1px solid var(--card-border);
-      padding: 8px 12px;
-      border-radius: 999px;
-      background: rgba(0,0,0,0.24);
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: 1.1fr 1fr;
-      gap: 16px;
-    }
-
-    .card {
-      border: 1px solid var(--card-border);
-      border-radius: var(--radius);
-      background: var(--card);
-      padding: 16px;
-    }
-
-    .card h3 {
-      margin: 0 0 12px;
-      font-size: 16px;
-      font-weight: 700;
-      color: #f8fbff;
-    }
-
-    .row {
-      display: grid;
-      grid-template-columns: 110px 1fr;
-      gap: 10px;
-      align-items: center;
-      margin-bottom: 10px;
-    }
-
-    .row.compact {
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 8px;
-    }
-
-    label {
-      color: var(--text-sub);
-      font-size: 13px;
-      font-weight: 600;
-    }
-
-    input, select, button {
-      width: 100%;
-      border-radius: 10px;
-      border: 1px solid rgba(255,255,255,0.18);
-      background: rgba(9, 14, 24, 0.65);
-      color: var(--text-main);
-      font-size: 14px;
-      padding: 10px 12px;
-      outline: none;
-      transition: all 0.2s ease;
-    }
-
-    input:focus, select:focus {
-      border-color: var(--accent-2);
-      box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.2);
-    }
-
-    button {
-      cursor: pointer;
-      font-weight: 700;
-      letter-spacing: 0.2px;
-    }
-
-    .btn-primary {
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
-      color: #042024;
-      border: 0;
-    }
-
-    .btn-soft {
-      background: rgba(255,255,255,0.1);
-    }
-
-    .btn-danger {
-      background: linear-gradient(135deg, #fb7185, #f43f5e);
-      color: #fff;
-      border: 0;
-    }
-
-    .status {
-      margin-top: 10px;
-      padding: 10px 12px;
-      border-radius: 10px;
-      border: 1px solid var(--card-border);
-      background: rgba(0,0,0,0.24);
-      font-size: 13px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-    }
-
-    .dot {
-      width: 10px;
-      height: 10px;
-      border-radius: 999px;
-      background: var(--danger);
-      box-shadow: 0 0 10px rgba(251, 113, 133, 0.8);
-    }
-
-    .dot.on {
-      background: var(--ok);
-      box-shadow: 0 0 10px rgba(52, 211, 153, 0.8);
-    }
-
-    .swatch {
-      height: 70px;
-      border-radius: 12px;
-      border: 1px solid var(--card-border);
-      background: rgb(0,255,0);
-    }
-
-    .footer {
-      margin-top: 14px;
-      display: flex;
-      gap: 10px;
-    }
-
-    .muted {
-      color: var(--text-sub);
-      font-size: 12px;
-    }
-
-    @media (max-width: 900px) {
-      .grid { grid-template-columns: 1fr; }
-      .header { flex-direction: column; align-items: flex-start; }
-    }
+    :root{--bg:#0b1220;--card:#121b2e;--line:#23314b;--txt:#eaf0ff;--sub:#9fb0d2;--ok:#22c55e;--danger:#fb7185;--acc:#22d3ee}
+    *{box-sizing:border-box} body{margin:0;font-family:"Segoe UI","Microsoft YaHei",sans-serif;background:radial-gradient(1200px 700px at 20% -20%,#19305a 0%,transparent 65%),radial-gradient(900px 600px at 100% 0%,#0a3644 0%,transparent 60%),var(--bg);color:var(--txt)}
+    .wrap{max-width:1080px;margin:28px auto;padding:0 16px}
+    .head{display:flex;justify-content:space-between;align-items:end;gap:12px;margin-bottom:16px}
+    .title{font-size:30px;font-weight:800}
+    .sub{font-size:13px;color:var(--sub)}
+    .badge{font-size:12px;color:#cde6ff;border:1px solid var(--line);background:#0f1729;padding:8px 12px;border-radius:999px}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+    .card{background:linear-gradient(180deg,#16233b,#111b2f);border:1px solid var(--line);border-radius:14px;padding:14px}
+    h3{margin:0 0 12px;font-size:16px}
+    .row{display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center;margin-bottom:9px}
+    .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+    label{font-size:13px;color:var(--sub)}
+    input,select,button{width:100%;padding:10px 12px;border-radius:10px;border:1px solid #2b3d5c;background:#0c1425;color:var(--txt);font-size:14px}
+    input:focus,select:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 3px rgba(34,211,238,.15)}
+    button{cursor:pointer;font-weight:700}
+    .btn{background:#182742}.btn:hover{background:#1c2d4d}
+    .pri{background:linear-gradient(135deg,#34d399,#22d3ee);border:0;color:#032228}
+    .danger{background:linear-gradient(135deg,#fb7185,#f43f5e);border:0;color:#fff}
+    .status{margin-top:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:#10192a}
+    .left{display:flex;align-items:center;gap:10px}
+    .dot{width:10px;height:10px;border-radius:999px;background:var(--danger);box-shadow:0 0 10px rgba(251,113,133,.7)}
+    .dot.on{background:var(--ok);box-shadow:0 0 10px rgba(34,197,94,.7)}
+    .swatch{height:70px;border-radius:10px;border:1px solid var(--line);background:rgb(0,255,0)}
+    .actions{display:flex;gap:8px}
+    .hide{display:none}
+    @media (max-width:900px){.grid{grid-template-columns:1fr}.head{flex-direction:column;align-items:flex-start}}
   </style>
 </head>
 <body>
-  <div class="panel">
-    <div class="header">
+  <div class="wrap">
+    <div class="head">
       <div>
-        <div class="title">MyCross Web 控制台</div>
-        <div class="muted">现代化控制界面，支持多配置管理与实时应用</div>
+        <div class="title">MyCross 控制台</div>
+        <div class="sub">全新重构版 · Web UI + 本地服务</div>
       </div>
-      <div class="hotkey">全局热键关闭: Ctrl + Alt + Shift + F12</div>
+      <div class="badge">热键关闭准星: Ctrl + Alt + Shift + F12</div>
     </div>
 
     <div class="grid">
       <section class="card">
         <h3>配置管理</h3>
-        <div class="row">
-          <label for="profileSelect">已存在配置</label>
-          <select id="profileSelect"></select>
+        <div class="row"><label>已存在配置</label><select id="profileSelect"></select></div>
+        <div class="row"><label>配置名</label><input id="profileName" placeholder="例如: sniper.ini" /></div>
+        <div class="row3">
+          <button class="btn" id="loadBtn">加载</button>
+          <button class="btn" id="newBtn">新建</button>
+          <button class="btn" id="renameBtn">重命名</button>
         </div>
-        <div class="row">
-          <label for="profileName">配置名</label>
-          <input id="profileName" placeholder="例如: sniper.ini" />
-        </div>
-        <div class="row compact">
-          <button class="btn-soft" id="loadBtn">加载</button>
-          <button class="btn-soft" id="newBtn">新建</button>
-          <button class="btn-soft" id="renameBtn">重命名</button>
-        </div>
-        <div class="footer">
-          <button class="btn-primary" id="saveBtn">保存当前配置</button>
-          <button class="btn-danger" id="quitBtn">退出程序</button>
+        <div class="row3" style="margin-top:8px;">
+          <button class="pri" id="saveBtn">保存当前配置</button>
+          <div></div>
+          <button class="danger" id="quitBtn">退出程序</button>
         </div>
       </section>
 
@@ -239,195 +71,73 @@
         <div class="row"><label>颜色 R</label><input id="color_r" /></div>
         <div class="row"><label>颜色 G</label><input id="color_g" /></div>
         <div class="row"><label>颜色 B</label><input id="color_b" /></div>
-        <div class="row">
-          <label>颜色预览</label>
-          <div class="swatch" id="swatch"></div>
-        </div>
+        <div class="row"><label>颜色预览</label><div class="swatch" id="swatch"></div></div>
       </section>
     </div>
 
     <div class="status">
-      <div style="display:flex;align-items:center;gap:10px;">
-        <span class="dot" id="statusDot"></span>
-        <span id="statusText">状态: 已停止</span>
-      </div>
-      <div style="display:flex;gap:10px;">
-        <button class="btn-soft" id="applyBtn" style="width:auto;padding:8px 14px;">应用参数</button>
-        <button class="btn-primary" id="toggleBtn" style="width:auto;padding:8px 14px;">启动准星</button>
+      <div class="left"><span class="dot" id="dot"></span><span id="st">状态: 已停止</span></div>
+      <div class="actions">
+        <button class="btn" id="applyBtn">应用参数</button>
+        <button class="pri" id="toggleBtn">启动准星</button>
       </div>
     </div>
   </div>
 
   <script>
-    const ids = ["x","y","window_size","cross_half","line_width","color_r","color_g","color_b"];
+    const keys=["x","y","window_size","cross_half","line_width","color_r","color_g","color_b"];
+    const $=id=>document.getElementById(id);
 
-    async function post(path, form = {}) {
-      const body = new URLSearchParams(form).toString();
-      const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body });
-      if (!r.ok) {
-        const t = await r.text();
-        throw new Error(t || `HTTP ${r.status}`);
-      }
-      const ct = r.headers.get("content-type") || "";
-      return ct.includes("application/json") ? r.json() : r.text();
+    async function post(path,obj={}){
+      const body=new URLSearchParams(obj).toString();
+      const r=await fetch(path,{method:"POST",headers:{"Content-Type":"application/x-www-form-urlencoded"},body});
+      if(!r.ok){throw new Error(await r.text()||`HTTP ${r.status}`)}
+      const ct=r.headers.get("content-type")||"";
+      return ct.includes("application/json")?r.json():r.text();
+    }
+    async function state(){const r=await fetch('/api/state',{cache:'no-store'});if(!r.ok)throw new Error(await r.text()||'state fail');return r.json();}
+
+    function formData(){const o={};keys.forEach(k=>o[k]=$(k).value.trim());return o}
+    function fill(cfg){keys.forEach(k=>$(k).value=cfg[k]);paintSwatch()}
+    function paintSwatch(){const r=Number($("color_r").value||0),g=Number($("color_g").value||0),b=Number($("color_b").value||0);$("swatch").style.background=`rgb(${r},${g},${b})`}
+    function normName(n){n=(n||"").trim();if(!n)return"";return /\.ini$/i.test(n)?n:`${n}.ini`;}
+
+    function render(s){
+      const sel=$("profileSelect");
+      const cur=s.active_profile||"";
+      sel.innerHTML="";
+      (s.profiles||[]).forEach(n=>{const op=document.createElement("option");op.value=n;op.textContent=n;if(n===cur)op.selected=true;sel.appendChild(op);});
+      $("profileName").value=cur;
+      fill(s.config);
+      const on=!!s.running;
+      $("dot").classList.toggle("on",on);
+      $("st").textContent=on?"状态: 运行中":"状态: 已停止";
+      $("toggleBtn").textContent=on?"停止准星":"启动准星";
     }
 
-    async function getState() {
-      const r = await fetch("/api/state", { cache: "no-store" });
-      if (!r.ok) throw new Error("状态读取失败");
-      return r.json();
-    }
+    async function refresh(){try{render(await state())}catch(e){alert(`刷新失败: ${e.message}`)}}
 
-    function fillForm(cfg) {
-      ids.forEach(id => document.getElementById(id).value = cfg[id]);
-      refreshSwatch();
-    }
+    keys.forEach(k=>$(k).addEventListener('input',paintSwatch));
 
-    function readForm() {
-      const out = {};
-      ids.forEach(id => out[id] = document.getElementById(id).value.trim());
-      return out;
-    }
+    $("applyBtn").onclick=async()=>{try{render(await post('/api/apply',formData()))}catch(e){alert(`应用失败: ${e.message}`)}};
+    $("toggleBtn").onclick=async()=>{try{const s=await state();render(await post('/api/toggle',{running:s.running?0:1}))}catch(e){alert(`切换失败: ${e.message}`)}};
+    $("loadBtn").onclick=async()=>{const n=$("profileSelect").value;if(!n)return;try{render(await post('/api/profile/load',{name:n}))}catch(e){alert(`加载失败: ${e.message}`)}};
+    $("saveBtn").onclick=async()=>{try{render(await post('/api/profile/save',{...formData(),name:$("profileName").value.trim()}))}catch(e){alert(`保存失败: ${e.message}`)}};
+    $("newBtn").onclick=async()=>{const n=$("profileName").value.trim();if(!n)return alert('请先输入配置名');try{render(await post('/api/profile/new',{...formData(),name:n}))}catch(e){alert(`新建失败: ${e.message}`)}};
+    $("renameBtn").onclick=async()=>{const oldn=$("profileSelect").value;const newn=$("profileName").value.trim();if(!oldn)return alert('请先选择配置');if(!newn)return alert('请先输入新配置名');if(oldn.toLowerCase()===normName(newn).toLowerCase())return alert('新旧配置名相同');try{render(await post('/api/profile/rename',{old_name:oldn,new_name:newn}))}catch(e){alert(`重命名失败: ${e.message}`)}};
+    $("quitBtn").onclick=async()=>{if(!confirm('确认退出程序？'))return;try{await post('/api/quit',{});window.close()}catch(e){alert(`退出失败: ${e.message}`)}};
 
-    function refreshSwatch() {
-      const r = Number(document.getElementById("color_r").value || 0);
-      const g = Number(document.getElementById("color_g").value || 0);
-      const b = Number(document.getElementById("color_b").value || 0);
-      document.getElementById("swatch").style.background = `rgb(${r}, ${g}, ${b})`;
-    }
-
-    function renderState(state) {
-      const sel = document.getElementById("profileSelect");
-      const current = state.active_profile || "";
-      sel.innerHTML = "";
-      (state.profiles || []).forEach(name => {
-        const op = document.createElement("option");
-        op.value = name;
-        op.textContent = name;
-        if (name === current) op.selected = true;
-        sel.appendChild(op);
-      });
-
-      document.getElementById("profileName").value = current;
-      fillForm(state.config);
-
-      const running = !!state.running;
-      document.getElementById("statusText").textContent = running ? "状态: 运行中" : "状态: 已停止";
-      document.getElementById("statusDot").classList.toggle("on", running);
-      document.getElementById("toggleBtn").textContent = running ? "停止准星" : "启动准星";
-    }
-
-    async function refreshAll() {
-      try {
-        renderState(await getState());
-      } catch (e) {
-        alert(`刷新失败: ${e.message}`);
-      }
-    }
-
-    async function ping() {
-      try {
-        await post("/api/ping", {});
-      } catch (_) {
-      }
-    }
-
-    ids.forEach(id => document.getElementById(id).addEventListener("input", refreshSwatch));
-
-    document.getElementById("applyBtn").addEventListener("click", async () => {
-      try {
-        const s = await post("/api/apply", readForm());
-        renderState(s);
-      } catch (e) {
-        alert(`应用失败: ${e.message}`);
-      }
+    $("profileSelect").addEventListener('change',async()=>{
+      const n=$("profileSelect").value;$("profileName").value=n;if(!n)return;
+      try{render(await post('/api/profile/load',{name:n}))}catch(e){alert(`自动加载失败: ${e.message}`)}
     });
 
-    document.getElementById("toggleBtn").addEventListener("click", async () => {
-      try {
-        const current = (await getState()).running;
-        const s = await post("/api/toggle", { running: current ? 0 : 1 });
-        renderState(s);
-      } catch (e) {
-        alert(`切换失败: ${e.message}`);
-      }
-    });
+    async function ping(){try{await post('/api/ping',{})}catch(_){}}
+    setInterval(refresh,3000);
+    setInterval(ping,1000);
+    window.addEventListener('beforeunload',()=>{navigator.sendBeacon('/api/quit','')});
 
-    document.getElementById("loadBtn").addEventListener("click", async () => {
-      try {
-        const name = document.getElementById("profileSelect").value;
-        const s = await post("/api/profile/load", { name });
-        renderState(s);
-      } catch (e) {
-        alert(`加载失败: ${e.message}`);
-      }
-    });
-
-    document.getElementById("saveBtn").addEventListener("click", async () => {
-      try {
-        const name = document.getElementById("profileName").value.trim();
-        const s = await post("/api/profile/save", { ...readForm(), name });
-        renderState(s);
-      } catch (e) {
-        alert(`保存失败: ${e.message}`);
-      }
-    });
-
-    document.getElementById("newBtn").addEventListener("click", async () => {
-      try {
-        const name = document.getElementById("profileName").value.trim();
-        if (!name) return alert("请先输入配置名");
-        const s = await post("/api/profile/new", { ...readForm(), name });
-        renderState(s);
-      } catch (e) {
-        alert(`新建失败: ${e.message}`);
-      }
-    });
-
-    document.getElementById("renameBtn").addEventListener("click", async () => {
-      try {
-        const old_name = document.getElementById("profileSelect").value;
-        const new_name = document.getElementById("profileName").value.trim();
-        if (!old_name) return alert("请先选择要重命名的配置");
-        if (!new_name) return alert("请先输入新的配置名");
-        if (old_name.toLowerCase() === (new_name.endsWith(".ini") ? new_name : `${new_name}.ini`).toLowerCase()) {
-          return alert("新旧配置名相同，无需重命名");
-        }
-        const s = await post("/api/profile/rename", { old_name, new_name });
-        renderState(s);
-      } catch (e) {
-        alert(`重命名失败: ${e.message}`);
-      }
-    });
-
-    document.getElementById("quitBtn").addEventListener("click", async () => {
-      if (!confirm("确认退出 MyCross 服务吗？")) return;
-      try {
-        await post("/api/quit", {});
-        alert("程序已退出");
-      } catch (e) {
-        alert(`退出失败: ${e.message}`);
-      }
-    });
-
-    document.getElementById("profileSelect").addEventListener("change", async () => {
-      const name = document.getElementById("profileSelect").value;
-      document.getElementById("profileName").value = name;
-      if (!name) return;
-      try {
-        const s = await post("/api/profile/load", { name });
-        renderState(s);
-      } catch (e) {
-        alert(`自动加载失败: ${e.message}`);
-      }
-    });
-
-    refreshAll();
-    setInterval(refreshAll, 3000);
-    setInterval(ping, 1000);
-    window.addEventListener("beforeunload", () => {
-      navigator.sendBeacon("/api/quit", "");
-    });
+    refresh();
   </script>
 </body>
 </html>

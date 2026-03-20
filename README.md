@@ -1,69 +1,40 @@
 ﻿# MyCross
 
-<p align="center">
-  <b>Web UI 驱动的 Windows 准星叠加工具</b>
-</p>
+重构版 `MyCross`：
 
-## 这次重构
+- C++ 后端：准星渲染 + 本地 HTTP API + 配置文件管理
+- Web 前端：现代化控制台（自动加载配置、新建、保存、重命名、启动/停止）
+- 启动后默认打开应用窗口模式（Edge `--app`），失败时回退默认浏览器
 
-- 前端改为 `Web UI`（本地浏览器界面）
-- 后端改为内置 `HTTP API`（`127.0.0.1:5188`）
-- 准星渲染仍由 Win32 完成（置顶、透明、鼠标穿透）
-- 支持多配置文件的加载/新建/保存/重命名
-
-## 启动方式
+## 运行
 
 ```bat
 build.bat
 crosshair.exe
 ```
 
-程序启动后会自动打开“应用窗口模式”（无地址栏、无标签页，外观类似普通桌面软件）：
+## 功能
 
-```text
-http://127.0.0.1:5188/
-```
+- 启动/停止准星叠加
+- 参数调整：坐标、尺寸、线宽、RGB
+- 配置管理：加载、新建、保存、重命名
+- 下拉框选中后自动加载
+- 全局热键关闭准星：`Ctrl + Alt + Shift + F12`
 
-## Web UI 功能
+## API（本地）
 
-- 准星开关（启动/停止）
-- 参数实时应用（坐标、尺寸、线宽、RGB）
-- 配置管理：
-  - 加载配置
-  - 新建配置
-  - 保存当前配置
-  - 重命名配置
-- 颜色实时预览
+- `GET /api/state`
+- `POST /api/ping`
+- `POST /api/toggle`
+- `POST /api/apply`
+- `POST /api/profile/load`
+- `POST /api/profile/save`
+- `POST /api/profile/new`
+- `POST /api/profile/rename`
+- `POST /api/quit`
 
-## 全局热键
+## 目录
 
-- 关闭准星：`Ctrl + Alt + Shift + F12`
-
-## 配置目录
-
-```text
-configs/*.ini
-```
-
-默认配置：
-
-```text
-configs/default.ini
-```
-
-## 主要文件
-
-```text
-crosshair.cpp     # Win32 渲染 + HTTP API 服务
-web/index.html    # Web UI 前端
-build.bat         # 构建脚本
-```
-
-## 退出程序
-
-- 在 Web UI 中点击“退出程序”按钮
-
-## 说明
-
-- 默认使用 Edge `--app` 方式承载 Web UI（避免普通浏览器标签页体验）
-- 若应用窗口启动失败，会自动回退到默认浏览器打开
+- `crosshair.cpp` 后端与 Win32 渲染
+- `web/index.html` 前端界面
+- `configs/*.ini` 配置文件
