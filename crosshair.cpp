@@ -56,6 +56,7 @@ DWORD g_overlayThreadId = 0;
 std::thread g_overlayThread;
 SOCKET g_listenSocket = INVALID_SOCKET;
 PROCESS_INFORMATION g_webAppProcess = {};
+DWORD g_lastAppLaunchError = 0;
 
 int ClampInt(int value, int minV, int maxV)
 {
@@ -976,26 +977,39 @@ std::wstring FindEdgeExecutable()
 
 bool LaunchAppWindow()
 {
-    const std::wstring edgeExe = FindEdgeExecutable();
-    std::wstring cmd = L"\\\"" + edgeExe + L"\\\" --app=http://127.0.0.1:5188/ --new-window --window-size=1280,860";
+    g_lastAppLaunchError = 0;
+    std::vector<std::wstring> candidates = {
+        FindEdgeExecutable(),
+        L"msedge.exe"
+    };
 
-    STARTUPINFOW si = {};
-    si.cb = sizeof(si);
-    ZeroMemory(&g_webAppProcess, sizeof(g_webAppProcess));
+    for (const auto& edgeExe : candidates) {
+        STARTUPINFOW si = {};
+        si.cb = sizeof(si);
+        ZeroMemory(&g_webAppProcess, sizeof(g_webAppProcess));
 
-    BOOL ok = CreateProcessW(
-        nullptr,
-        cmd.data(),
-        nullptr,
-        nullptr,
-        FALSE,
-        0,
-        nullptr,
-        nullptr,
-        &si,
-        &g_webAppProcess);
+        std::wstring cmd = L"\\\"" + edgeExe + L"\\\" --app=http://127.0.0.1:5188/ --new-window --window-size=1280,860";
 
-    return ok == TRUE;
+        BOOL ok = CreateProcessW(
+            edgeExe.c_str(),
+            cmd.data(),
+            nullptr,
+            nullptr,
+            FALSE,
+            0,
+            nullptr,
+            nullptr,
+            &si,
+            &g_webAppProcess);
+
+        if (ok == TRUE) {
+            return true;
+        }
+
+        g_lastAppLaunchError = GetLastError();
+    }
+
+    return false;
 }
 
 void StopAppWindow()
@@ -1035,7 +1049,9 @@ int WINAPI wWinMain(HINSTANCE instance, HINSTANCE, PWSTR, int)
     }
 
     if (!LaunchAppWindow()) {
-        MessageBoxW(nullptr, L"启动应用窗口失败，已回退到默认浏览器。", L"MyCross", MB_OK | MB_ICONWARNING);
+        wchar_t msg[256] = {};
+        swprintf(msg, 256, L"启动应用窗口失败（错误码: %lu），已回退到默认浏览器。", g_lastAppLaunchError);
+        MessageBoxW(nullptr, msg, L"MyCross", MB_OK | MB_ICONWARNING);
         ShellExecuteW(nullptr, L"open", L"http://127.0.0.1:5188/", nullptr, nullptr, SW_SHOWNORMAL);
     }
 
