@@ -5,6 +5,7 @@
 *.pdb
 build/
 build-mingw/
+build-msvc/
 
 # Ignore common temp files
 *.log

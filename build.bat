@@ -7,36 +7,42 @@ if errorlevel 1 (
   exit /b 1
 )
 
-where mingw32-make >nul 2>nul
-if errorlevel 1 (
-  echo [ERROR] mingw32-make not found. Please install MinGW-w64 and ensure mingw32-make is in PATH.
+set "VCVARS64=D:\Program Files\VS\VC\Auxiliary\Build\vcvars64.bat"
+if not exist "%VCVARS64%" (
+  echo [ERROR] vcvars64.bat not found: %VCVARS64%
   exit /b 1
 )
 
-where gcc >nul 2>nul
+call "%VCVARS64%"
 if errorlevel 1 (
-  echo [ERROR] gcc not found. Please install MinGW-w64 and ensure gcc is in PATH.
+  echo [ERROR] Failed to initialize MSVC environment.
   exit /b 1
 )
 
-where g++ >nul 2>nul
+where cl >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] g++ not found. Please install MinGW-w64 and ensure g++ is in PATH.
+  echo [ERROR] cl not found after vcvars64 initialization.
   exit /b 1
 )
 
-echo Configuring CMake...
-cmake -S . -B build-mingw -G "MinGW Makefiles" -DCMAKE_CXX_COMPILER=g++ -DCMAKE_BUILD_TYPE=Release -DCMAKE_TRY_COMPILE_TARGET_TYPE=STATIC_LIBRARY
+where nmake >nul 2>nul
+if errorlevel 1 (
+  echo [ERROR] nmake not found after vcvars64 initialization.
+  exit /b 1
+)
+
+echo Configuring CMake (MSVC + NMake, x64)...
+cmake -S . -B build-msvc --fresh -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=nmake
 if errorlevel 1 (
   echo [ERROR] CMake configure failed.
   exit /b 1
 )
 
 echo Building crosshair.exe ...
-cmake --build build-mingw -j
+cmake --build build-msvc
 if errorlevel 1 (
   echo [ERROR] Build failed.
   exit /b 1
 )
 
-echo [OK] Build complete: build-mingw\crosshair.exe
+echo [OK] Build complete: build-msvc\crosshair.exe

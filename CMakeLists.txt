@@ -22,6 +22,11 @@ add_executable(
   src/ui_launcher.cpp
 )
 target_link_libraries(crosshair PRIVATE ws2_32)
+target_compile_definitions(crosshair PRIVATE NOMINMAX)
+
+if(MSVC)
+  target_compile_options(crosshair PRIVATE /utf-8)
+endif()
 
 if(MINGW)
   target_link_options(crosshair PRIVATE -municode)

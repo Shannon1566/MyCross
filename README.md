@@ -10,10 +10,10 @@
 
 ```bat
 build.bat
-build-mingw\crosshair.exe
+build-msvc\crosshair.exe
 ```
 
-说明：在 Windows + MinGW 下，`mingw32-make` 对应 Linux 里的 `make`。
+说明：默认使用 CMake + Visual Studio 2022（MSVC，x64）构建。
 
 ## 功能
 
@@ -39,4 +39,4 @@ build-mingw\crosshair.exe
 
 - `frontend/index.html` 前端源码
 - `configs/*.ini` 配置文件
-- `build-mingw/` CMake 构建输出（运行时资源会自动拷贝到 `build-mingw/configs` 与 `build-mingw/web`）
+- `build-msvc/` CMake 构建输出（运行时资源会自动拷贝到 `build-msvc/configs` 与 `build-msvc/web`）
