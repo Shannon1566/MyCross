@@ -1,40 +1,50 @@
 ﻿# MyCross
 
-重构版 `MyCross`：
+<p align="center">
+  <b>一个基于 C++ 与 WebView2 的游戏准星叠加工具</b><br>
+  <sub>Lightweight Crosshair Overlay Tool built with C++ & WebView2</sub>
+</p>
 
-- C++ 后端：准星渲染 + 配置文件管理 + 原生消息桥
-- Web 前端：现代化控制台（自动加载配置、新建、保存、重命名、启动/停止）
-- 启动后以内嵌 WebView2 窗口承载前端控制台
+---
 
-## 运行
+## 📸 预览
+
+<p align="center">
+  <img src="assets/UI.png" width="600"/>
+</p>
+
+---
+
+## ✨ 功能特性
+
+- 🎯 启动 / 停止准星叠加
+- 🎛 参数调节：位置、尺寸、线宽、RGB 颜色
+- 📁 配置管理：新建、加载、保存、重命名
+- ⚡ 下拉选择配置时自动应用
+- ⌨️ 全局快捷键关闭准星：`Ctrl + Alt + Shift + F12`
+
+---
+
+## 🧠 技术实现
+
+- 使用 **C++** 构建核心逻辑与渲染控制
+- 使用 **WebView2** 构建前端 UI
+- 前后端通过 `postMessage` 进行通信
+- 实现参数控制、配置管理与状态同步
+
+---
+
+## 🚀 构建与运行
+
+### 环境要求
+
+- Windows 11
+- CMake 4.0.2
+- Visual Studio 2022（MSVC x64）
+- WebView2 Runtime（Windows 11 已内置）
+
+### 构建方式
 
 ```bat
 build.bat
-build-msvc\crosshair.exe
 ```
-
-说明：默认使用 CMake + Visual Studio 2022（MSVC，x64）构建。
-
-## 功能
-
-- 启动/停止准星叠加
-- 参数调整：坐标、尺寸、线宽、RGB
-- 配置管理：加载、新建、保存、重命名
-- 下拉框选中后自动加载
-- 全局热键关闭准星：`Ctrl + Alt + Shift + F12`
-
-## 通信
-
-- 前端与 C++ 后端通过 WebView2 `postMessage` 桥接通信
-- 控制方法覆盖原有状态读取、参数应用、配置管理与退出流程
-
-## 目录
-
-- `frontend/index.html` 前端源码
-- `configs/*.ini` 配置文件
-- `build-msvc/` CMake 构建输出（运行时资源会自动拷贝到 `build-msvc/configs` 与 `build-msvc/web`）
-
-## 许可证
-
-- 项目许可证：MIT（见 `LICENSE`）
-- 第三方声明：见 `THIRD_PARTY_NOTICES.txt`（包含 Microsoft.Web.WebView2 许可信息）
