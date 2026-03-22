@@ -27,8 +27,8 @@ if(MINGW)
   target_link_options(crosshair PRIVATE -municode)
 endif()
 
-add_custom_command(
-  TARGET crosshair POST_BUILD
+add_custom_target(
+  copy_runtime_assets ALL
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:crosshair>/configs"
   COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:crosshair>/web"
   COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -39,3 +39,5 @@ add_custom_command(
           "$<TARGET_FILE_DIR:crosshair>/web"
   COMMENT "Copy runtime assets (configs + frontend)"
 )
+
+add_dependencies(copy_runtime_assets crosshair)
