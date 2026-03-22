@@ -8,7 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(
   crosshair
   WIN32
-  src/crosshair.cpp
+  src/main.cpp
   src/app_types.h
   src/common.h
   src/common.cpp

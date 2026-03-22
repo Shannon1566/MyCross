@@ -10,3 +10,6 @@ build-mingw/
 *.log
 *.tmp
 *.cache
+
+# Ignore generated documentation
+AGENTS.md

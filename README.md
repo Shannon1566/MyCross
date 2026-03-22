@@ -37,7 +37,6 @@ build-mingw\crosshair.exe
 
 ## 目录
 
-- `src/crosshair.cpp` 后端与 Win32 渲染
 - `frontend/index.html` 前端源码
 - `configs/*.ini` 配置文件
 - `build-mingw/` CMake 构建输出（运行时资源会自动拷贝到 `build-mingw/configs` 与 `build-mingw/web`）
