@@ -33,3 +33,8 @@ build-msvc\crosshair.exe
 - `frontend/index.html` 前端源码
 - `configs/*.ini` 配置文件
 - `build-msvc/` CMake 构建输出（运行时资源会自动拷贝到 `build-msvc/configs` 与 `build-msvc/web`）
+
+## 许可证
+
+- 项目许可证：MIT（见 `LICENSE`）
+- 第三方声明：见 `THIRD_PARTY_NOTICES.txt`（包含 Microsoft.Web.WebView2 许可信息）
