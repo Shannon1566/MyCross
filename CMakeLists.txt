@@ -16,12 +16,16 @@ add_executable(
   src/config_store.cpp
   src/overlay.h
   src/overlay.cpp
-  src/server.h
-  src/server.cpp
   src/ui_launcher.h
   src/ui_launcher.cpp
 )
-target_link_libraries(crosshair PRIVATE ws2_32)
+target_include_directories(crosshair PRIVATE "${CMAKE_SOURCE_DIR}/third_party/webview2/include")
+target_link_libraries(
+  crosshair
+  PRIVATE
+  ole32
+  "${CMAKE_SOURCE_DIR}/third_party/webview2/lib/x64/WebView2LoaderStatic.lib"
+)
 target_compile_definitions(crosshair PRIVATE NOMINMAX)
 
 if(MSVC)

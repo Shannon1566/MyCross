@@ -5,10 +5,7 @@
 #include <string>
 #include <thread>
 
-#include <winsock2.h>
-#include <ws2tcpip.h>
 #define WIN32_LEAN_AND_MEAN
-#include <shellapi.h>
 #include <windows.h>
 
 namespace mycross {
@@ -44,7 +41,6 @@ namespace mycross {
     struct AppContext {
         State state;
         std::atomic<bool> exit{false};
-        std::atomic<DWORD> last_ping{0};
         HINSTANCE inst = nullptr;
         std::wstring exe_dir;
         std::wstring cfg_dir;
@@ -53,9 +49,7 @@ namespace mycross {
         std::atomic<bool> overlay_ready{false};
         HWND ctl_wnd = nullptr;
         HWND overlay_wnd = nullptr;
-        SOCKET listen_socket = INVALID_SOCKET;
-        bool app_mode = false;
-        PROCESS_INFORMATION ui_proc = {};
+        HWND ui_wnd = nullptr;
         DWORD launch_error = 0;
     };
 

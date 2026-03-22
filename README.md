@@ -2,9 +2,9 @@
 
 重构版 `MyCross`：
 
-- C++ 后端：准星渲染 + 本地 HTTP API + 配置文件管理
+- C++ 后端：准星渲染 + 配置文件管理 + 原生消息桥
 - Web 前端：现代化控制台（自动加载配置、新建、保存、重命名、启动/停止）
-- 启动后默认打开应用窗口模式（Edge `--app`），失败时回退默认浏览器
+- 启动后以内嵌 WebView2 窗口承载前端控制台
 
 ## 运行
 
@@ -23,17 +23,10 @@ build-msvc\crosshair.exe
 - 下拉框选中后自动加载
 - 全局热键关闭准星：`Ctrl + Alt + Shift + F12`
 
-## API（本地）
+## 通信
 
-- `GET /api/state`
-- `POST /api/ping`
-- `POST /api/toggle`
-- `POST /api/apply`
-- `POST /api/profile/load`
-- `POST /api/profile/save`
-- `POST /api/profile/new`
-- `POST /api/profile/rename`
-- `POST /api/quit`
+- 前端与 C++ 后端通过 WebView2 `postMessage` 桥接通信
+- 控制方法覆盖原有状态读取、参数应用、配置管理与退出流程
 
 ## 目录
 

@@ -22,30 +22,93 @@ const limits = {
 
 const $ = (id) => document.getElementById(id);
 
-async function post(path, obj = {}) {
-  const body = new URLSearchParams(obj).toString();
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body
-  });
+const bridge = (() => {
+  const pending = new Map();
+  let seq = 1;
 
-  if (!response.ok) {
-    throw new Error((await response.text()) || `HTTP ${response.status}`);
+  function ensureBridge() {
+    const webview = window.chrome?.webview;
+    if (!webview) {
+      throw new Error("WebView2 bridge unavailable");
+    }
+    return webview;
   }
 
-  const contentType = response.headers.get("content-type") || "";
-  return contentType.includes("application/json")
-    ? response.json()
-    : response.text();
+  function normalizeResponse(data) {
+    if (typeof data === "string") {
+      return JSON.parse(data);
+    }
+    return data;
+  }
+
+  ensureBridge().addEventListener("message", (event) => {
+    let msg;
+    try {
+      msg = normalizeResponse(event.data);
+    } catch (_) {
+      return;
+    }
+    if (!msg || typeof msg !== "object") {
+      return;
+    }
+    const id = String(msg.id ?? "");
+    if (!pending.has(id)) {
+      return;
+    }
+
+    const { resolve, reject, timer } = pending.get(id);
+    clearTimeout(timer);
+    pending.delete(id);
+
+    if (msg.ok) {
+      resolve(msg.result ?? {});
+      return;
+    }
+    const err = msg.error?.message || "native call failed";
+    reject(new Error(err));
+  });
+
+  function invoke(method, params = {}) {
+    const id = String(seq++);
+    const payload = new URLSearchParams({ id, method });
+    Object.entries(params).forEach(([k, v]) => {
+      payload.set(k, String(v));
+    });
+
+    const webview = ensureBridge();
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {
+        pending.delete(id);
+        reject(new Error("native call timeout"));
+      }, 15000);
+
+      pending.set(id, { resolve, reject, timer });
+      webview.postMessage(payload.toString());
+    });
+  }
+
+  return { invoke };
+})();
+
+async function post(path, obj = {}) {
+  const methodMap = {
+    "/api/toggle": "overlay.set_running",
+    "/api/apply": "config.apply",
+    "/api/profile/load": "profile.load",
+    "/api/profile/save": "profile.save",
+    "/api/profile/new": "profile.create",
+    "/api/profile/rename": "profile.rename",
+    "/api/quit": "app.quit"
+  };
+  const method = methodMap[path];
+  if (!method) {
+    throw new Error(`unsupported path: ${path}`);
+  }
+  return bridge.invoke(method, obj);
 }
 
 async function state() {
-  const response = await fetch("/api/state", { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error((await response.text()) || "state fail");
-  }
-  return response.json();
+  return bridge.invoke("state.get");
 }
 
 function formData() {
@@ -246,7 +309,6 @@ $("quitBtn").onclick = async () => {
 
   try {
     await post("/api/quit", {});
-    window.close();
   } catch (error) {
     alert(`退出失败: ${error.message}`);
   }
@@ -268,15 +330,4 @@ $("profileSelect").addEventListener("change", async () => {
   }
 });
 
-async function ping() {
-  try {
-    await post("/api/ping", {});
-  } catch (_) {
-  }
-}
-
-setInterval(ping, 1000);
-window.addEventListener("beforeunload", () => {
-  navigator.sendBeacon("/api/quit", "");
-});
 refresh();
