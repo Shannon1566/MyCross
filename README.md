@@ -10,8 +10,10 @@
 
 ```bat
 build.bat
-crosshair.exe
+build-mingw\crosshair.exe
 ```
+
+说明：在 Windows + MinGW 下，`mingw32-make` 对应 Linux 里的 `make`。
 
 ## 功能
 
@@ -35,6 +37,7 @@ crosshair.exe
 
 ## 目录
 
-- `crosshair.cpp` 后端与 Win32 渲染
-- `web/index.html` 前端界面
+- `src/crosshair.cpp` 后端与 Win32 渲染
+- `frontend/index.html` 前端源码
 - `configs/*.ini` 配置文件
+- `build-mingw/` CMake 构建输出（运行时资源会自动拷贝到 `build-mingw/configs` 与 `build-mingw/web`）

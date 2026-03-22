@@ -1,8 +1,10 @@
-﻿# Ignore build outputs
+# Ignore build outputs
 *.exe
 *.obj
 *.o
 *.pdb
+build/
+build-mingw/
 
 # Ignore common temp files
 *.log
