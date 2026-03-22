@@ -298,55 +298,7 @@
     </div>
   </div>
 
-  <script>
-    const keys = ["x", "y", "window_size", "cross_half", "line_width", "color_r", "color_g", "color_b"];
-    const limits = { x: [-1, 10000], y: [-1, 10000], window_size: [20, 800], cross_half: [1, 400], line_width: [1, 20], color_r: [0, 255], color_g: [0, 255], color_b: [0, 255] };
-    const $ = id => document.getElementById(id);
-
-    async function post(path, obj = {}) { const body = new URLSearchParams(obj).toString(); const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body }); if (!r.ok) throw new Error(await r.text() || `HTTP ${r.status}`); const ct = r.headers.get("content-type") || ""; return ct.includes("application/json") ? r.json() : r.text(); }
-    async function state() { const r = await fetch('/api/state', { cache: 'no-store' }); if (!r.ok) throw new Error(await r.text() || 'state fail'); return r.json(); }
-
-    function formData() { const o = {}; keys.forEach(k => o[k] = $(k).value.trim()); return o }
-    function fill(cfg) { keys.forEach(k => $(k).value = cfg[k]); paintSwatch() }
-    function paintSwatch() { const r = Number($("color_r").value || 0), g = Number($("color_g").value || 0), b = Number($("color_b").value || 0); $("swatch").style.background = `rgb(${r},${g},${b})` }
-    function normName(n) { n = (n || "").trim(); if (!n) return ""; return /\.ini$/i.test(n) ? n : `${n}.ini`; }
-    function clampByKey(key, v) { const [a, b] = limits[key] || [-999999, 999999]; return Math.max(a, Math.min(b, v)); }
-
-    let dirty = false, inAutoApply = false;
-    function render(s, forceFill = false) { const sel = $("profileSelect"); const cur = s.active_profile || ""; sel.innerHTML = ""; (s.profiles || []).forEach(n => { const op = document.createElement("option"); op.value = n; op.textContent = n; if (n === cur) op.selected = true; sel.appendChild(op) }); if (forceFill || !dirty) { $("profileName").value = cur; fill(s.config) } const on = !!s.running; $("dot").classList.toggle("on", on); $("st").textContent = on ? "状态: 运行中" : "状态: 已停止"; $("toggleBtn").textContent = on ? "停止准星" : "启动准星" }
-    async function refresh() { try { render(await state(), false) } catch (e) { alert(`刷新失败: ${e.message}`) } }
-
-    async function autoApplyNow() { if (inAutoApply) return; inAutoApply = true; try { const s = await post('/api/apply', formData()); dirty = false; render(s, false) } catch (e) { alert(`自动应用失败: ${e.message}`) } finally { inAutoApply = false } }
-
-    keys.forEach(k => { const el = $(k); el.addEventListener('input', () => { dirty = true; paintSwatch() }); el.addEventListener('blur', () => { if (dirty) autoApplyNow() }); el.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); autoApplyNow() } }) });
-
-    document.querySelectorAll('[data-step-target]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const key = btn.getAttribute('data-step-target');
-        const step = Number(btn.getAttribute('data-step') || 1);
-        const el = $(key);
-        const cur = Number(el.value || 0);
-        const next = clampByKey(key, Number.isFinite(cur) ? cur + step : step);
-        el.value = String(next);
-        dirty = true;
-        paintSwatch();
-        autoApplyNow();
-      });
-    });
-
-    $("toggleBtn").onclick = async () => { try { const s = await state(); render(await post('/api/toggle', { running: s.running ? 0 : 1 }), false) } catch (e) { alert(`切换失败: ${e.message}`) } };
-    $("saveBtn").onclick = async () => { try { const s = await post('/api/profile/save', { ...formData(), name: $("profileName").value.trim() }); dirty = false; render(s, true) } catch (e) { alert(`保存失败: ${e.message}`) } };
-    $("newBtn").onclick = async () => { const n = $("profileName").value.trim(); if (!n) return alert('请先输入配置名'); try { const s = await post('/api/profile/new', { ...formData(), name: n }); dirty = false; render(s, true) } catch (e) { alert(`新建失败: ${e.message}`) } };
-    $("renameBtn").onclick = async () => { const oldn = $("profileSelect").value; const newn = $("profileName").value.trim(); if (!oldn) return alert('请先选择配置'); if (!newn) return alert('请先输入新配置名'); if (oldn.toLowerCase() === normName(newn).toLowerCase()) return alert('新旧配置名相同'); try { const s = await post('/api/profile/rename', { old_name: oldn, new_name: newn }); dirty = false; render(s, true) } catch (e) { alert(`重命名失败: ${e.message}`) } };
-    $("quitBtn").onclick = async () => { if (!confirm('确认退出程序？')) return; try { await post('/api/quit', {}); window.close() } catch (e) { alert(`退出失败: ${e.message}`) } };
-
-    $("profileSelect").addEventListener('change', async () => { const n = $("profileSelect").value; $("profileName").value = n; if (!n) return; try { const s = await post('/api/profile/load', { name: n }); dirty = false; render(s, true) } catch (e) { alert(`自动加载失败: ${e.message}`) } });
-
-    async function ping() { try { await post('/api/ping', {}) } catch (_) { } }
-    setInterval(ping, 1000);
-    window.addEventListener('beforeunload', () => { navigator.sendBeacon('/api/quit', '') });
-    refresh();
-  </script>
+  <script src="./app.js"></script>
 </body>
 
 </html>
