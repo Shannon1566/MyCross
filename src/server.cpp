@@ -12,6 +12,47 @@
 namespace mycross {
     namespace {
 
+        std::wstring sanitize_web_path(const std::string &path) {
+            if (path.empty() || path == "/") {
+                return L"index.html";
+            }
+            if (path.front() != '/') {
+                return L"";
+            }
+
+            std::wstring relative = utf8w(path.substr(1));
+            if (relative.empty()) {
+                return L"";
+            }
+            if (relative.find(L"..") != std::wstring::npos ||
+                relative.find(L'\\') != std::wstring::npos) {
+                return L"";
+            }
+            return relative;
+        }
+
+        const char *content_type_for_path(const std::wstring &path) {
+            const size_t dot = path.find_last_of(L'.');
+            if (dot == std::wstring::npos) {
+                return "application/octet-stream";
+            }
+
+            const std::wstring ext = path.substr(dot);
+            if (_wcsicmp(ext.c_str(), L".html") == 0) {
+                return "text/html; charset=utf-8";
+            }
+            if (_wcsicmp(ext.c_str(), L".css") == 0) {
+                return "text/css; charset=utf-8";
+            }
+            if (_wcsicmp(ext.c_str(), L".js") == 0) {
+                return "application/javascript; charset=utf-8";
+            }
+            if (_wcsicmp(ext.c_str(), L".json") == 0) {
+                return "application/json; charset=utf-8";
+            }
+            return "application/octet-stream";
+        }
+
         std::string read_file(const std::wstring &path) {
             std::ifstream in(path.c_str(), std::ios::binary);
             if (!in) {
@@ -416,16 +457,17 @@ namespace mycross {
             return;
         }
 
-        if (method == "GET" && path == "/") {
-            const auto html = read_file(app.web_dir + L"\\index.html");
-            if (html.empty()) {
-                send_http(client, 500, "Internal Server Error", "text/plain; charset=utf-8",
-                          "index.html missing");
-            } else {
-                send_http(client, 200, "OK", "text/html; charset=utf-8", html);
+        if (method == "GET") {
+            const std::wstring relative = sanitize_web_path(path);
+            if (!relative.empty()) {
+                const std::wstring file_path = app.web_dir + L"\\" + relative;
+                if (GetFileAttributesW(file_path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+                    const std::string body = read_file(file_path);
+                    send_http(client, 200, "OK", content_type_for_path(file_path), body);
+                    closesocket(client);
+                    return;
+                }
             }
-            closesocket(client);
-            return;
         }
 
         send_http(client, 404, "Not Found", "text/plain; charset=utf-8", "not found");
