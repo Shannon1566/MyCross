@@ -5,8 +5,10 @@
 namespace mycross {
     namespace {
 
+        // 覆盖层线程内部共享的全局上下文指针。
         AppContext *g_app = nullptr;
 
+        // 依据配置计算覆盖层窗口矩形，默认居中。
         RECT overlay_rect(const Config &cfg) {
             const int screen_width = GetSystemMetrics(SM_CXSCREEN);
             const int screen_height = GetSystemMetrics(SM_CYSCREEN);
@@ -23,6 +25,7 @@ namespace mycross {
             return rect;
         }
 
+        // 准星窗口过程：仅负责绘制与基本销毁清理。
         LRESULT CALLBACK OverlayProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
             if (g_app == nullptr) {
                 return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -62,6 +65,7 @@ namespace mycross {
             }
         }
 
+        // 控制窗口过程：处理同步、热键和退出消息。
         LRESULT CALLBACK CtlProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
             if (g_app == nullptr) {
                 return DefWindowProcW(hwnd, message, wparam, lparam);
@@ -93,6 +97,7 @@ namespace mycross {
             return DefWindowProcW(hwnd, message, wparam, lparam);
         }
 
+        // 覆盖层线程入口：注册窗口类并运行消息循环。
         void overlay_thread_main(AppContext *app) {
             g_app = app;
 
@@ -134,6 +139,7 @@ namespace mycross {
 
     } // namespace
 
+    // 根据 app.state.running 决定显示或关闭准星覆盖层。
     void apply_overlay(AppContext &app) {
         Config cfg;
         bool running = false;
@@ -169,12 +175,14 @@ namespace mycross {
         InvalidateRect(app.overlay_wnd, nullptr, TRUE);
     }
 
+    // 通知控制窗口触发一次 apply_overlay。
     void post_sync(const AppContext &app) {
         if (app.ctl_wnd) {
             PostMessageW(app.ctl_wnd, WM_APP_SYNC, 0, 0);
         }
     }
 
+    // 启动覆盖层线程并等待初始化完成。
     void start_overlay(AppContext &app) {
         app.overlay_thread = std::thread(overlay_thread_main, &app);
         for (int i = 0; i < 300 && !app.overlay_ready.load(); ++i) {
@@ -182,6 +190,7 @@ namespace mycross {
         }
     }
 
+    // 请求覆盖层线程退出并 join。
     void stop_overlay(AppContext &app) {
         if (app.ctl_wnd) {
             PostMessageW(app.ctl_wnd, WM_APP_EXIT, 0, 0);

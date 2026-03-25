@@ -5,12 +5,14 @@
 #include "ui_launcher.h"
 
 int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
+    // 构建应用上下文并初始化基础路径。
     mycross::AppContext app;
     app.inst = hInst;
     app.exe_dir = mycross::exe_dir();
     app.cfg_dir = app.exe_dir + L"\\configs";
     app.web_dir = app.exe_dir + L"\\web";
 
+    // 读取默认 profile 作为初始状态。
     mycross::ensure_cfg(app);
     {
         std::lock_guard<std::mutex> lock(app.state.mu);
@@ -19,10 +21,12 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
         app.state.running = false;
     }
 
+    // 应用命令行覆盖项并启动覆盖层线程。
     mycross::apply_cli(app);
     mycross::start_overlay(app);
     mycross::post_sync(app);
 
+    // 启动 WebView2 控制面板，失败时弹窗并清理。
     if (!mycross::launch_ui(app)) {
         wchar_t message[256] = {};
         swprintf(message, 256,
@@ -33,6 +37,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
         return 1;
     }
 
+    // 主线程消息循环：直到收到退出信号。
     MSG msg = {};
     while (!app.exit.load()) {
         const BOOL rc = GetMessageW(&msg, nullptr, 0, 0);
@@ -43,6 +48,7 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
         DispatchMessageW(&msg);
     }
 
+    // 统一回收 UI 与覆盖层资源。
     mycross::stop_ui(app);
     mycross::stop_overlay(app);
     return 0;

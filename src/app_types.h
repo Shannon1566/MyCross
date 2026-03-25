@@ -10,16 +10,21 @@
 
 namespace mycross {
 
+    // Win32 窗口类名与应用内消息定义。
     constexpr wchar_t OV_CLASS[] = L"MyCrossOverlay";
     constexpr wchar_t CTL_CLASS[] = L"MyCrossCtl";
     constexpr UINT WM_APP_SYNC = WM_APP + 1;
     constexpr UINT WM_APP_EXIT = WM_APP + 2;
+    // 默认本地 HTTP 服务端口。
     constexpr int PORT = 5188;
+    // 前端心跳超时时间（毫秒）。
     constexpr DWORD HEARTBEAT_TIMEOUT_MS = 15000;
+    // 全局快捷键：Ctrl+Alt+Shift+F12。
     constexpr int HOTKEY_ID = 1;
     constexpr UINT HOTKEY_MOD = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
     constexpr UINT HOTKEY_VK = VK_F12;
 
+    // 准星配置（位置、尺寸、线宽、颜色）。
     struct Config {
         int x = -1;
         int y = -1;
@@ -31,6 +36,7 @@ namespace mycross {
         int color_b = 0;
     };
 
+    // 运行时共享状态（由互斥锁保护）。
     struct State {
         std::mutex mu;
         Config cfg;
@@ -38,6 +44,7 @@ namespace mycross {
         std::wstring active = L"default.ini";
     };
 
+    // 应用全局上下文：生命周期内共享的资源与句柄。
     struct AppContext {
         State state;
         std::atomic<bool> exit{false};

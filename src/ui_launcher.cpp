@@ -20,15 +20,18 @@ namespace mycross {
         using Microsoft::WRL::Callback;
         using Microsoft::WRL::ComPtr;
 
+        // WebView UI 宿主窗口类名与虚拟域名。
         constexpr wchar_t UI_CLASS[] = L"MyCrossWebViewHost";
         constexpr wchar_t UI_HOST[] = L"app.mycross.local";
 
+        // UI 线程内共享状态。
         AppContext *g_app = nullptr;
         ComPtr<ICoreWebView2Controller> g_controller;
         ComPtr<ICoreWebView2> g_webview;
         bool g_com_init = false;
         bool g_com_owned = false;
 
+        // URL 解码（支持 %XX 与 + 空格）。
         std::string urld(const std::string &in) {
             std::string out;
             for (size_t i = 0; i < in.size(); ++i) {
@@ -45,6 +48,7 @@ namespace mycross {
             return out;
         }
 
+        // 解析前端桥接消息（form-urlencoded）。
         std::map<std::string, std::string> form_parse(const std::string &body) {
             std::map<std::string, std::string> form;
             size_t start = 0;
@@ -68,6 +72,7 @@ namespace mycross {
             return form;
         }
 
+        // 根据前端传参更新配置并做归一化。
         Config cfg_from_form(const std::map<std::string, std::string> &form,
                              const Config &original) {
             Config cfg = original;
@@ -87,6 +92,7 @@ namespace mycross {
             return cfg;
         }
 
+        // 输出前端面板需要的状态 JSON。
         std::string state_json(AppContext &app) {
             Config cfg;
             bool running = false;
@@ -124,11 +130,13 @@ namespace mycross {
             return json.str();
         }
 
+        // 统一触发应用退出流程。
         void request_exit(AppContext &app) {
             app.exit = true;
             PostQuitMessage(0);
         }
 
+        // 构造 bridge 成功响应。
         std::string ok_response(const std::string &id, const std::string &result_json) {
             std::ostringstream json;
             json << "{"
@@ -138,6 +146,7 @@ namespace mycross {
             return json.str();
         }
 
+        // 构造 bridge 错误响应。
         std::string err_response(const std::string &id, const std::string &code,
                                  const std::string &message) {
             std::ostringstream json;
@@ -151,6 +160,7 @@ namespace mycross {
             return json.str();
         }
 
+        // 处理 WebView bridge 调用并返回 JSON 字符串。
         std::string handle_bridge_call(AppContext &app,
                                        const std::map<std::string, std::string> &form) {
             const auto it_id = form.find("id");
@@ -311,6 +321,7 @@ namespace mycross {
             return err_response(id, "not_implemented", "unknown method");
         }
 
+        // 跟随宿主窗口尺寸刷新 WebView 视图区域。
         void set_webview_bounds() {
             if (!g_controller || !g_app || !g_app->ui_wnd) {
                 return;
@@ -320,6 +331,7 @@ namespace mycross {
             g_controller->put_Bounds(bounds);
         }
 
+        // UI 宿主窗口过程。
         LRESULT CALLBACK UiProc(HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
             switch (message) {
             case WM_SIZE:
@@ -342,6 +354,7 @@ namespace mycross {
             }
         }
 
+        // 异步初始化 WebView2，并注册消息桥接。
         bool init_webview(AppContext &app) {
             bool done = false;
             bool ok = false;
@@ -452,6 +465,7 @@ namespace mycross {
 
     } // namespace
 
+    // 初始化 COM、创建宿主窗口并启动 WebView2。
     bool launch_ui(AppContext &app) {
         app.launch_error = 0;
 
@@ -495,6 +509,7 @@ namespace mycross {
         return true;
     }
 
+    // 释放 WebView2/窗口/COM 资源。
     void stop_ui(AppContext &app) {
         g_webview.Reset();
         g_controller.Reset();
@@ -512,6 +527,7 @@ namespace mycross {
         g_app = nullptr;
     }
 
+    // 支持位置参数与 --x/--y 两种命令行形式。
     void apply_cli(AppContext &app) {
         int argc = 0;
         LPWSTR *argv = CommandLineToArgvW(GetCommandLineW(), &argc);

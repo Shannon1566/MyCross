@@ -7,10 +7,12 @@
 
 namespace mycross {
 
+    // 通用整数区间裁剪。
     int clampi(int value, int min_value, int max_value) {
         return std::max(min_value, std::min(value, max_value));
     }
 
+    // 仅接受完整十进制字符串；否则回退到默认值。
     int toint(const std::string &s, int default_value) {
         if (s.empty()) {
             return default_value;
@@ -21,12 +23,14 @@ namespace mycross {
                                                   : static_cast<int>(value);
     }
 
+    // 轻量整数转宽字符串，避免引入流对象开销。
     std::wstring itow(int value) {
         wchar_t buffer[32] = {};
         swprintf(buffer, 32, L"%d", value);
         return buffer;
     }
 
+    // 读取当前模块路径并截取目录部分。
     std::wstring exe_dir() {
         wchar_t path[MAX_PATH] = {};
         GetModuleFileNameW(nullptr, path, MAX_PATH);
@@ -35,6 +39,7 @@ namespace mycross {
         return sep == std::wstring::npos ? L"." : result.substr(0, sep);
     }
 
+    // UTF-8 -> UTF-16，失败返回空串。
     std::wstring utf8w(const std::string &s) {
         if (s.empty()) {
             return L"";
@@ -48,6 +53,7 @@ namespace mycross {
         return out;
     }
 
+    // UTF-16 -> UTF-8，失败返回空串。
     std::string wutf8(const std::wstring &s) {
         if (s.empty()) {
             return "";
@@ -63,6 +69,7 @@ namespace mycross {
         return out;
     }
 
+    // 仅处理当前项目所需的常见 JSON 转义字符。
     std::string jesc(const std::string &in) {
         std::string out;
         for (char ch : in) {
@@ -83,6 +90,7 @@ namespace mycross {
         return out;
     }
 
+    // 去除字符串首尾空白，不修改中间内容。
     std::wstring trim(const std::wstring &s) {
         size_t left = 0;
         while (left < s.size() && iswspace(s[left])) {

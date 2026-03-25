@@ -12,6 +12,7 @@
 namespace mycross {
     namespace {
 
+        // 校验并规范静态资源路径，防止目录穿越。
         std::wstring sanitize_web_path(const std::string &path) {
             if (path.empty() || path == "/") {
                 return L"index.html";
@@ -31,6 +32,7 @@ namespace mycross {
             return relative;
         }
 
+        // 根据扩展名返回 Content-Type。
         const char *content_type_for_path(const std::wstring &path) {
             const size_t dot = path.find_last_of(L'.');
             if (dot == std::wstring::npos) {
@@ -53,6 +55,7 @@ namespace mycross {
             return "application/octet-stream";
         }
 
+        // 以二进制模式读取文件内容。
         std::string read_file(const std::wstring &path) {
             std::ifstream in(path.c_str(), std::ios::binary);
             if (!in) {
@@ -63,6 +66,7 @@ namespace mycross {
             return buffer.str();
         }
 
+        // URL 解码（支持 %XX 与 + 空格）。
         std::string urld(const std::string &in) {
             std::string out;
             for (size_t i = 0; i < in.size(); ++i) {
@@ -79,6 +83,7 @@ namespace mycross {
             return out;
         }
 
+        // 解析 application/x-www-form-urlencoded。
         std::map<std::string, std::string> form_parse(const std::string &body) {
             std::map<std::string, std::string> form;
             size_t start = 0;
@@ -102,6 +107,7 @@ namespace mycross {
             return form;
         }
 
+        // 发送基础 HTTP 响应。
         void send_http(SOCKET client, int code, const char *status, const char *content_type,
                        const std::string &body) {
             std::ostringstream response;
@@ -114,6 +120,7 @@ namespace mycross {
             send(client, raw.c_str(), static_cast<int>(raw.size()), 0);
         }
 
+        // 读取完整 HTTP 请求（header + body）。
         bool read_req(SOCKET client, std::string &raw) {
             raw.clear();
             char buffer[4096];
@@ -159,6 +166,7 @@ namespace mycross {
             }
         }
 
+        // 从表单覆盖已有配置并做归一化。
         Config cfg_from_form(const std::map<std::string, std::string> &form,
                              const Config &original) {
             Config cfg = original;
@@ -178,6 +186,7 @@ namespace mycross {
             return cfg;
         }
 
+        // 组装前端所需的当前状态 JSON。
         std::string state_json(AppContext &app) {
             Config cfg;
             bool running = false;
@@ -215,6 +224,7 @@ namespace mycross {
             return json.str();
         }
 
+        // API 路由分发。返回 true 表示已处理。
         bool api(AppContext &app, SOCKET client, const std::string &method,
                  const std::string &path, const std::string &body) {
             app.last_ping = GetTickCount();
@@ -416,6 +426,7 @@ namespace mycross {
 
     } // namespace
 
+    // 单连接处理：解析请求行 -> API/静态资源 -> 返回响应。
     void handle_client(AppContext &app, SOCKET client) {
         std::string raw;
         if (!read_req(client, raw)) {
@@ -474,6 +485,7 @@ namespace mycross {
         closesocket(client);
     }
 
+    // 启动本地回环地址 HTTP 监听。
     bool start_server(AppContext &app) {
         WSADATA winsock_data = {};
         if (WSAStartup(MAKEWORD(2, 2), &winsock_data) != 0) {
@@ -514,6 +526,7 @@ namespace mycross {
         return true;
     }
 
+    // 停止监听并释放网络栈资源。
     void stop_server(AppContext &app) {
         if (app.listen_socket != INVALID_SOCKET) {
             closesocket(app.listen_socket);
@@ -522,6 +535,7 @@ namespace mycross {
         WSACleanup();
     }
 
+    // 轮询连接本地端口，用于等待服务就绪。
     bool wait_server(int ms) {
         const DWORD start = GetTickCount();
         while (static_cast<int>(GetTickCount() - start) < ms) {

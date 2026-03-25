@@ -6,6 +6,7 @@
 
 namespace mycross {
 
+    // 限制数值范围并修正坐标哨兵值。
     void normalize(Config &cfg) {
         cfg.window_size = clampi(cfg.window_size, 20, 800);
         cfg.line_width = clampi(cfg.line_width, 1, 20);
@@ -21,6 +22,7 @@ namespace mycross {
         }
     }
 
+    // 过滤 Windows 非法文件名字符，保证 profile 可落盘。
     std::wstring profile_name(std::wstring name) {
         name = trim(name);
         for (wchar_t &ch : name) {
@@ -38,10 +40,12 @@ namespace mycross {
         return name;
     }
 
+    // 生成 profile 完整路径。
     std::wstring profile_path(const AppContext &app, const std::wstring &name) {
         return app.cfg_dir + L"\\" + name;
     }
 
+    // 遍历配置目录并返回排序后的 ini 列表。
     std::vector<std::wstring> profiles(const AppContext &app) {
         std::vector<std::wstring> result;
         WIN32_FIND_DATAW find_data = {};
@@ -60,6 +64,7 @@ namespace mycross {
         return result;
     }
 
+    // 从 INI 读取各字段；缺失时保留默认值。
     Config load_cfg(const std::wstring &file) {
         Config cfg;
         cfg.x = GetPrivateProfileIntW(L"Crosshair", L"x", cfg.x, file.c_str());
@@ -83,6 +88,7 @@ namespace mycross {
         return cfg;
     }
 
+    // 统一写入 INI 字段，返回写入是否全部成功。
     bool save_cfg(const std::wstring &file, Config cfg) {
         normalize(cfg);
         return WritePrivateProfileStringW(L"Crosshair", L"x", itow(cfg.x).c_str(),
@@ -109,6 +115,7 @@ namespace mycross {
                                           file.c_str());
     }
 
+    // 启动时创建配置目录，并在空目录时生成默认配置。
     void ensure_cfg(const AppContext &app) {
         CreateDirectoryW(app.cfg_dir.c_str(), nullptr);
         if (profiles(app).empty()) {
