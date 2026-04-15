@@ -1,45 +1,79 @@
 @echo off
-setlocal
-
-where cmake >nul 2>nul
-if errorlevel 1 (
-  echo [ERROR] cmake not found. Please install CMake and ensure it is in PATH.
-  exit /b 1
-)
-
-set "VCVARS64=D:\Program Files\VS\VC\Auxiliary\Build\vcvars64.bat"
-if not exist "%VCVARS64%" (
-  echo [ERROR] vcvars64.bat not found: %VCVARS64%
-  exit /b 1
-)
-
-call "%VCVARS64%"
-if errorlevel 1 (
-  echo [ERROR] Failed to initialize MSVC environment.
-  exit /b 1
-)
+setlocal EnableExtensions EnableDelayedExpansion
 
 where cl >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] cl not found after vcvars64 initialization.
-  exit /b 1
+  set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+  set "VS_INSTALL_DIR="
+
+  if exist "!VSWHERE!" (
+    for /f "usebackq tokens=*" %%i in (`"!VSWHERE!" -latest -products * -property installationPath`) do (
+      set "VS_INSTALL_DIR=%%i"
+    )
+  )
+
+  if not "!VS_INSTALL_DIR!"=="" (
+    set "DISCOVERED_VCVARS64=!VS_INSTALL_DIR!\VC\Auxiliary\Build\vcvars64.bat"
+    if exist "!DISCOVERED_VCVARS64!" (
+      echo Initializing MSVC environment from Visual Studio Build Tools...
+      call "!DISCOVERED_VCVARS64!"
+    ) else (
+      echo [WARN] vswhere found Visual Studio, but vcvars64.bat was not found:
+      echo !DISCOVERED_VCVARS64!
+    )
+  )
+
+  where cl >nul 2>nul
+  if errorlevel 1 (
+    if "%VCVARS64_BAT%"=="" (
+      echo [ERROR] cl not found.
+      echo Install Build Tools for Visual Studio with the Desktop development with C++ workload.
+      echo Optional fallback: set VCVARS64_BAT to the full path of vcvars64.bat.
+      exit /b 1
+    )
+
+    if not exist "%VCVARS64_BAT%" (
+      echo [ERROR] VCVARS64_BAT does not point to an existing file:
+      echo %VCVARS64_BAT%
+      exit /b 1
+    )
+
+    echo Initializing MSVC environment from VCVARS64_BAT...
+    call "%VCVARS64_BAT%"
+    if errorlevel 1 (
+      echo [ERROR] Failed to initialize MSVC environment.
+      exit /b 1
+    )
+  )
+
+  where cl >nul 2>nul
+  if errorlevel 1 (
+    echo [ERROR] cl still not found after initializing the MSVC environment.
+    exit /b 1
+  )
 )
 
-where nmake >nul 2>nul
+where cmake >nul 2>nul
 if errorlevel 1 (
-  echo [ERROR] nmake not found after vcvars64 initialization.
+  echo [ERROR] cmake not found. Ensure CMake is available in PATH.
   exit /b 1
 )
 
-echo Configuring CMake (MSVC + NMake, x64)...
-cmake -S . -B build-msvc --fresh -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -DCMAKE_MAKE_PROGRAM=nmake
+where ninja >nul 2>nul
+if errorlevel 1 (
+  echo [ERROR] ninja not found. Ensure Ninja is available in PATH.
+  exit /b 1
+)
+
+echo Configuring CMake preset: msvc-ninja-release ...
+cmake --preset msvc-ninja-release
 if errorlevel 1 (
   echo [ERROR] CMake configure failed.
   exit /b 1
 )
 
 echo Building crosshair.exe ...
-cmake --build build-msvc
+cmake --build --preset msvc-ninja-release
 if errorlevel 1 (
   echo [ERROR] Build failed.
   exit /b 1

@@ -12,5 +12,9 @@ build-msvc/
 *.tmp
 *.cache
 
+
+.vscode/
+
+
 # Ignore generated documentation
 AGENTS.md
