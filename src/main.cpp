@@ -1,18 +1,55 @@
+#include <QGuiApplication>
+#include <QQmlApplicationEngine>
+#include <QQmlContext>
+#include <QStringList>
+
 #include "app_types.h"
 #include "common.h"
 #include "config_store.h"
+#include "crosshair_controller.h"
 #include "overlay.h"
-#include "ui_launcher.h"
 
-int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
-    // 构建应用上下文并初始化基础路径。
+namespace {
+
+    void apply_cli(mycross::AppContext &app, const QStringList &args) {
+        mycross::Config cfg;
+        {
+            std::lock_guard<std::mutex> lock(app.state.mu);
+            cfg = app.state.cfg;
+        }
+
+        if (args.size() >= 3) {
+            cfg.x = args.at(1).toInt();
+            cfg.y = args.at(2).toInt();
+        }
+        for (int i = 1; i < args.size(); ++i) {
+            const QString &arg = args.at(i);
+            if (arg.startsWith(QStringLiteral("--x="))) {
+                cfg.x = arg.mid(4).toInt();
+            } else if (arg.startsWith(QStringLiteral("--y="))) {
+                cfg.y = arg.mid(4).toInt();
+            }
+        }
+
+        mycross::normalize(cfg);
+        {
+            std::lock_guard<std::mutex> lock(app.state.mu);
+            app.state.cfg = cfg;
+        }
+    }
+
+} // namespace
+
+int main(int argc, char *argv[]) {
+    QGuiApplication qt_app(argc, argv);
+    QGuiApplication::setApplicationName(QStringLiteral("MyCross"));
+    QGuiApplication::setOrganizationName(QStringLiteral("MyCross"));
+
     mycross::AppContext app;
-    app.inst = hInst;
+    app.inst = GetModuleHandleW(nullptr);
     app.exe_dir = mycross::exe_dir();
     app.cfg_dir = app.exe_dir + L"\\configs";
-    app.web_dir = app.exe_dir + L"\\web";
 
-    // 读取默认 profile 作为初始状态。
     mycross::ensure_cfg(app);
     {
         std::lock_guard<std::mutex> lock(app.state.mu);
@@ -21,35 +58,23 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE, PWSTR, int) {
         app.state.running = false;
     }
 
-    // 应用命令行覆盖项并启动覆盖层线程。
-    mycross::apply_cli(app);
+    apply_cli(app, QCoreApplication::arguments());
     mycross::start_overlay(app);
     mycross::post_sync(app);
 
-    // 启动 WebView2 控制面板，失败时弹窗并清理。
-    if (!mycross::launch_ui(app)) {
-        wchar_t message[256] = {};
-        swprintf(message, 256,
-                 L"\u542f\u52a8 WebView2 \u7a97\u53e3\u5931\u8d25\uff08\u9519\u8bef\u7801: %lu\uff09\u3002",
-                 app.launch_error);
-        MessageBoxW(nullptr, message, L"MyCross", MB_OK | MB_ICONERROR);
-        mycross::stop_overlay(app);
-        return 1;
-    }
+    mycross::CrosshairController controller(app);
+    QQmlApplicationEngine engine;
+    engine.rootContext()->setContextProperty(QStringLiteral("crosshair"), &controller);
 
-    // 主线程消息循环：直到收到退出信号。
-    MSG msg = {};
-    while (!app.exit.load()) {
-        const BOOL rc = GetMessageW(&msg, nullptr, 0, 0);
-        if (rc <= 0) {
-            break;
-        }
-        TranslateMessage(&msg);
-        DispatchMessageW(&msg);
-    }
+    QObject::connect(&controller, &mycross::CrosshairController::quitRequested, &qt_app,
+                     &QCoreApplication::quit);
+    QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &qt_app,
+                     []() { QCoreApplication::exit(1); }, Qt::QueuedConnection);
 
-    // 统一回收 UI 与覆盖层资源。
-    mycross::stop_ui(app);
+    engine.loadFromModule(QStringLiteral("MyCross"), QStringLiteral("Main"));
+    const int rc = qt_app.exec();
+
+    app.exit = true;
     mycross::stop_overlay(app);
-    return 0;
+    return rc;
 }

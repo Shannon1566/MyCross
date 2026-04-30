@@ -6,6 +6,8 @@
 build/
 build-mingw/
 build-msvc/
+build-qt-nmake/
+build-qt-vs/
 
 # Ignore common temp files
 *.log

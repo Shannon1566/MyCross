@@ -5,7 +5,9 @@
 #include <string>
 #include <thread>
 
+#ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 
 namespace mycross {
@@ -15,10 +17,6 @@ namespace mycross {
     constexpr wchar_t CTL_CLASS[] = L"MyCrossCtl";
     constexpr UINT WM_APP_SYNC = WM_APP + 1;
     constexpr UINT WM_APP_EXIT = WM_APP + 2;
-    // 默认本地 HTTP 服务端口。
-    constexpr int PORT = 5188;
-    // 前端心跳超时时间（毫秒）。
-    constexpr DWORD HEARTBEAT_TIMEOUT_MS = 15000;
     // 全局快捷键：Ctrl+Alt+Shift+F12。
     constexpr int HOTKEY_ID = 1;
     constexpr UINT HOTKEY_MOD = MOD_CONTROL | MOD_ALT | MOD_SHIFT | MOD_NOREPEAT;
@@ -51,13 +49,10 @@ namespace mycross {
         HINSTANCE inst = nullptr;
         std::wstring exe_dir;
         std::wstring cfg_dir;
-        std::wstring web_dir;
         std::thread overlay_thread;
         std::atomic<bool> overlay_ready{false};
         HWND ctl_wnd = nullptr;
         HWND overlay_wnd = nullptr;
-        HWND ui_wnd = nullptr;
-        DWORD launch_error = 0;
     };
 
 } // namespace mycross

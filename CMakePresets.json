@@ -2,20 +2,26 @@
   "version": 3,
   "configurePresets": [
     {
-      "name": "msvc-ninja-release",
-      "displayName": "MSVC Ninja Release",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build-msvc",
+      "name": "msvc-release",
+      "displayName": "MSVC VS 2026 Release",
+      "generator": "Visual Studio 18 2026",
+      "binaryDir": "${sourceDir}/build-qt-vs",
+      "architecture": "x64",
+      "environment": {
+        "VSLANG": "1033"
+      },
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_PREFIX_PATH": "D:/Qt/6.11.0/msvc2022_64",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "msvc-ninja-release",
-      "displayName": "Build MSVC Ninja Release",
-      "configurePreset": "msvc-ninja-release"
+      "name": "msvc-release",
+      "displayName": "Build MSVC VS 2026 Release",
+      "configurePreset": "msvc-release",
+      "configuration": "Release"
     }
   ]
 }
